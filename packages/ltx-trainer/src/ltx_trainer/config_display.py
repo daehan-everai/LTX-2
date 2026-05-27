@@ -130,7 +130,7 @@ def print_config(config: LtxTrainerConfig) -> None:
                         if cfg.checkpoints.interval
                         else "[dim]Disabled[/]",
                     ),
-                    ("Trackio", f"{cfg.trackio.project}" if cfg.trackio.enabled else "[dim]Disabled[/]"),
+                    ("TensorBoard", f"{cfg.tensorboard.log_dir or 'tensorboard/'}" if cfg.tensorboard.enabled else "[dim]Disabled[/]"),
                     ("HF Hub", cfg.hub.hub_model_id if cfg.hub.push_to_hub else "[dim]Disabled[/]"),
                 ],
             ),

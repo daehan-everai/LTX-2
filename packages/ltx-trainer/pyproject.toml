@@ -30,7 +30,7 @@ dependencies = [
     "torchcodec>=0.8.1",
     "torchvision>=0.21.0",
     "typer>=0.15.1",
-    "trackio>=0.20.2",
+    "tensorboard>=2.18.0",
     "setuptools>=79.0.0",
 ]
 

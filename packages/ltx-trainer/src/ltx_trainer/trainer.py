@@ -7,7 +7,7 @@ from typing import Callable
 
 import torch
 import yaml
-import trackio
+from torch.utils.tensorboard import SummaryWriter
 from accelerate import Accelerator, DistributedType
 from accelerate.utils import set_seed
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
@@ -98,7 +98,7 @@ class LtxvTrainer:
         self._training_state_paths: list[Path] = []
         self._training_state_size_warned = False
         self._sigma_tracker = SigmaBucketTracker()
-        self._trackio_run: trackio.Run | None = None
+        self._tb_writer: SummaryWriter | None = None
 
     def train(  # noqa: PLR0912, PLR0915
         self,
@@ -131,8 +131,7 @@ class LtxvTrainer:
             initial_step = 0
             resuming = False
 
-        resume_run_name = training_state.trackio_run_name if training_state is not None else None
-        self._init_trackio(resume_run_name)
+        self._init_tensorboard()
 
         self._init_dataloader()
         data_iter = iter(self._dataloader)
@@ -217,11 +216,11 @@ class LtxvTrainer:
                                     if isinstance(sample_paths, (list, tuple))
                                     else str(sample_paths)
                                 )
-                                if self._trackio_run is not None:
-                                    trackio.alert(
-                                        title="Grad norm spike",
-                                        text=f"norm={grad_norm.item():.3f} at step {self._global_step} | [{path_str}]",
-                                        level=trackio.AlertLevel.WARN,
+                                if self._tb_writer is not None:
+                                    self._tb_writer.add_text(
+                                        "train/grad_norm_spike",
+                                        f"norm={grad_norm.item():.3f} | [{path_str}]",
+                                        global_step=self._global_step,
                                     )
 
                     self._optimizer.step()
@@ -244,8 +243,6 @@ class LtxvTrainer:
                         self._transformer.eval()
                         try:
                             sampled_videos_paths = self._sample_videos(progress)
-                            if sampled_videos_paths and IS_MAIN_PROCESS:
-                                self._log_validation_samples(sampled_videos_paths, cfg.validation.prompts)
                         finally:
                             self._transformer.train()
                     # Save checkpoint if needed
@@ -350,9 +347,9 @@ class LtxvTrainer:
                     "stats/peak_gpu_memory_gb": stats.peak_gpu_memory_gb,
                 }
             )
-            if self._trackio_run is not None:
-                self._trackio_run.finish()
-                self._trackio_run = None
+            if self._tb_writer is not None:
+                self._tb_writer.close()
+                self._tb_writer = None
 
         self._accelerator.wait_for_everyone()
         self._accelerator.end_training()
@@ -1214,7 +1211,6 @@ class LtxvTrainer:
             ),
             lr_scheduler_state_dict=self._lr_scheduler.state_dict() if self._lr_scheduler is not None else None,
             optimizer_state_dict=optimizer_state,
-            trackio_run_name=self._trackio_run.name if self._trackio_run is not None else None,
         )
 
         state_path = save_dir / f"training_state_step_{self._global_step:05d}.pt"
@@ -1280,37 +1276,20 @@ class LtxvTrainer:
 
         logger.info(f"💾 Training configuration saved to: {config_path.relative_to(self._config.output_dir)}")
 
-    def _init_trackio(self, resume_run_name: str | None = None) -> None:
-        """Initialize Trackio experiment tracking."""
-        if not self._config.trackio.enabled or not IS_MAIN_PROCESS:
-            self._trackio_run = None
+    def _init_tensorboard(self) -> None:
+        """Initialize TensorBoard logging."""
+        if not self._config.tensorboard.enabled or not IS_MAIN_PROCESS:
+            self._tb_writer = None
             return
 
-        init_kwargs: dict = {
-            "project": self._config.trackio.project,
-            "name": resume_run_name or Path(self._config.output_dir).name,
-            "config": self._config.model_dump(),
-        }
-        if self._config.trackio.space_id is not None:
-            init_kwargs["space_id"] = self._config.trackio.space_id
-        if resume_run_name is not None:
-            init_kwargs["resume"] = "allow"
-
-        self._trackio_run = trackio.init(**init_kwargs)
+        log_dir = self._config.tensorboard.log_dir or str(Path(self._config.output_dir) / "tensorboard")
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        self._tb_writer = SummaryWriter(log_dir=log_dir)
+        logger.info(f"TensorBoard logging to: {log_dir}")
 
     def _log_metrics(self, metrics: dict[str, float]) -> None:
-        """Log metrics to Trackio."""
-        if self._trackio_run is not None:
-            self._trackio_run.log(metrics, step=self._global_step)
-
-    def _log_validation_samples(self, sample_paths: list[Path], prompts: list[str]) -> None:
-        """Log validation videos/images to Trackio."""
-        if not self._config.trackio.log_validation_videos or self._trackio_run is None:
-            return
-
-        for path, prompt in zip(sample_paths, prompts):
-            if path.suffix == ".png":
-                media = trackio.Image(str(path))
-            else:
-                media = trackio.Video(str(path))
-            self._trackio_run.log({f"validation/{prompt[:50]}": media}, step=self._global_step)
+        """Log metrics to TensorBoard."""
+        if self._tb_writer is not None:
+            for key, value in metrics.items():
+                self._tb_writer.add_scalar(key, value, global_step=self._global_step)
+            self._tb_writer.flush()

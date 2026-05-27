@@ -28,7 +28,6 @@ class TrainingState(BaseModel):
     rng_states: RngStates
     lr_scheduler_state_dict: dict[str, Any] | None = None
     optimizer_state_dict: dict[str, Any] | None = None
-    trackio_run_name: str | None = None
 
     def to_save_dict(self) -> dict[str, Any]:
         """Build dict suitable for torch.save -- recurses BaseModel sub-models, passes tensors/dicts through."""
@@ -49,5 +48,4 @@ class TrainingState(BaseModel):
             rng_states=RngStates(**data["rng_states"]),
             lr_scheduler_state_dict=data.get("lr_scheduler_state_dict"),
             optimizer_state_dict=data.get("optimizer_state_dict"),
-            trackio_run_name=data.get("trackio_run_name"),
         )
