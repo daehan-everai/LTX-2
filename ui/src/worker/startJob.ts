@@ -66,31 +66,8 @@ export async function startJob(job: JobRow): Promise<number> {
   const header = `[${nowIso()}] Starting: ${command} ${args.join(' ')}\n`;
   fs.writeSync(logFd, header);
 
-  // Wrap command in a shell that:
-  //  1. Writes the real child exit code to a .exitcode file before exiting.
-  //     This is the fallback so if the Node worker restarts while a detached
-  //     job is running, the next worker poll can still recover the result.
-  //     Without it, a successful job is wrongly marked as "failed".
-  //  2. Forwards SIGINT / SIGTERM received by the shell to the child process,
-  //     so the existing stop API (which sends SIGINT to the stored PID, now
-  //     the shell PID) still cancels training cleanly.
-  const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-  const innerCmd = [command, ...args].map(shellEscape).join(' ');
-  const wrappedCmd = [
-    `__ltx_exitcode_file=${shellEscape(exitCodeFile)}`,
-    `${innerCmd} &`,
-    `__ltx_child=$!`,
-    `trap 'kill -INT "$__ltx_child" 2>/dev/null' INT`,
-    `trap 'kill -TERM "$__ltx_child" 2>/dev/null' TERM`,
-    `wait "$__ltx_child"`,
-    `__ltx_ec=$?`,
-    // wait can return early when interrupted by a signal; loop until child is really gone
-    `while kill -0 "$__ltx_child" 2>/dev/null; do wait "$__ltx_child"; __ltx_ec=$?; done`,
-    `printf '%s' "$__ltx_ec" > "$__ltx_exitcode_file"`,
-    `exit "$__ltx_ec"`,
-  ].join('\n');
-
-  const child = spawn('sh', ['-c', wrappedCmd], {
+  const supervisorPath = path.join(__dirname, 'supervisor.mjs');
+  const child = spawn(process.execPath, [supervisorPath, exitCodeFile, command, ...args], {
     cwd,
     env,
     detached: true,
