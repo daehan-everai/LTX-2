@@ -123,13 +123,17 @@ export function LogViewer({ jobId, className }: Props) {
 
     const needsNew = !cached || cached.jobId !== jobId || cached.es.readyState === EventSource.CLOSED;
 
+    let entry: CachedTerminal;
     if (needsNew) {
       disposeCache();
-      cached = createCache(jobId, host);
-    } else if (cached.wrapper.parentNode !== host) {
-      host.appendChild(cached.wrapper);
+      entry = createCache(jobId, host);
+      cached = entry;
+    } else {
+      entry = cached as CachedTerminal;
+      if (entry.wrapper.parentNode !== host) {
+        host.appendChild(entry.wrapper);
+      }
     }
-    const entry = cached;
 
     const safeFit = () => {
       try {
