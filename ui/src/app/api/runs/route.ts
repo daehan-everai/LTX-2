@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   }
 
   const yamlConfig = buildYamlConfig(uiConfig, preprocessedDataRoot);
-  const configPath = path.join(outputDir, 'config.yaml');
+  const configPath = path.join(outputDir, 'training_config.yaml');
   try {
     fs.writeFileSync(configPath, YAML.stringify(yamlConfig), 'utf-8');
   } catch (err) {
