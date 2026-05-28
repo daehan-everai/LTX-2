@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   }
 
   const yamlConfig = buildYamlConfig(uiConfig, preprocessedDataRoot);
-  const configPath = path.join(outputDir, 'training_config.yaml');
+  const configPath = path.join(outputDir, 'config.yaml');
   try {
     fs.writeFileSync(configPath, YAML.stringify(yamlConfig), 'utf-8');
   } catch (err) {
@@ -145,6 +145,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       interval: uiConfig.checkpoints.interval,
       keep_last_n: uiConfig.checkpoints.keepLastN,
       precision: uiConfig.checkpoints.precision,
+      save_training_state: uiConfig.checkpoints.saveTrainingState,
       no_resume: true,
     },
     flow_matching: {

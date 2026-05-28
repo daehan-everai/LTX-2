@@ -322,7 +322,7 @@ export function ValidationSection({ config, update }: SectionProps) {
 export function CheckpointsSection({ config, update }: SectionProps) {
   return (
     <Section title="Checkpoints" defaultOpen={false}>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <NumberField
           label="Save Interval"
           value={config.checkpoints.interval}
@@ -341,6 +341,16 @@ export function CheckpointsSection({ config, update }: SectionProps) {
             { value: 'bfloat16', label: 'bfloat16' },
             { value: 'float16', label: 'float16' },
             { value: 'float32', label: 'float32' },
+          ]}
+        />
+        <SelectField
+          label="Save Training State"
+          value={config.checkpoints.saveTrainingState}
+          onChange={v => update('checkpoints', { saveTrainingState: v })}
+          options={[
+            { value: 'full', label: 'Full (optimizer + scheduler + RNG)' },
+            { value: 'minimal', label: 'Minimal (scheduler + RNG only)' },
+            { value: 'off', label: 'Off' },
           ]}
         />
       </div>

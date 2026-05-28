@@ -58,6 +58,7 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
       interval: 560,
       keepLastN: -1,
       precision: 'bfloat16',
+      saveTrainingState: 'full',
     },
     outputDir: outputDir || '/tmp/ltx-training',
     seed: 42,
