@@ -910,6 +910,10 @@ def encode_audio(
     mel_spectrogram = audio_processor.waveform_to_mel(Audio(waveform=waveform, sampling_rate=audio.sampling_rate))
     mel_spectrogram = mel_spectrogram.to(dtype=dtype)
 
+    # Audio VAE conv_in expects 2-channel (stereo) mel; duplicate mono if needed
+    if mel_spectrogram.shape[1] == 1:
+        mel_spectrogram = mel_spectrogram.repeat(1, 2, 1, 1)
+
     # Encode mel spectrogram to latents
     latents = audio_vae_encoder(mel_spectrogram)
 
