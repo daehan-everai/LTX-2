@@ -94,6 +94,28 @@ TrainingStrategyConfig = Annotated[
 ]
 
 
+class WeightNoiseConfig(ConfigBaseModel):
+    """Per-step Gaussian perturbation of trainable weights after optimizer.step().
+
+    Biases training toward flat loss minima, spreads learning across the LoRA rank budget,
+    and resists memorization on small datasets.
+    """
+
+    mode: Literal["none", "relative", "absolute"] = Field(
+        default="none",
+        description="Weight noise mode. 'none' disables noise. "
+        "'relative' scales sigma per-parameter by its RMS (adapts to per-layer magnitude). "
+        "'absolute' uses a fixed sigma for all parameters.",
+    )
+
+    sigma: float = Field(
+        default=0.01,
+        description="Noise scale. In relative mode, multiplied by each tensor's weight RMS. "
+        "Typical useful range: 0.01–0.017. Only used when mode is not 'none'.",
+        gt=0.0,
+    )
+
+
 class OptimizationConfig(ConfigBaseModel):
     """Configuration for optimization parameters"""
 
@@ -153,6 +175,11 @@ class OptimizationConfig(ConfigBaseModel):
     enable_gradient_checkpointing: bool = Field(
         default=False,
         description="Enable gradient checkpointing to save memory at the cost of slower training",
+    )
+
+    weight_noise: WeightNoiseConfig = Field(
+        default_factory=WeightNoiseConfig,
+        description="Per-step Gaussian perturbation of trainable weights for flat-minima regularization",
     )
 
 

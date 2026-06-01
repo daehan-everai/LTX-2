@@ -25,7 +25,7 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
       temporalBoundaryFrames: 3,
     },
     optimization: {
-      learningRate: 1e-5,
+      learningRate: 8e-5,
       steps: 11200,
       batchSize: 1,
       gradientAccumulationSteps: 1,
@@ -35,6 +35,7 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
       schedulerType: 'lambda_warmup',
       numWarmupSteps: 560,
       enableGradientCheckpointing: true,
+      weightNoise: { mode: 'none', sigma: 0.01 },
     },
     flowMatching: {
       timestepSamplingMode: 'uniform',

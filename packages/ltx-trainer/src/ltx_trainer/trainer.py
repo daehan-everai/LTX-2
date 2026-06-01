@@ -254,6 +254,9 @@ class LtxvTrainer:
                     ):
                         self._save_checkpoint()
 
+                    if is_optimization_step:
+                        self._apply_weight_noise()
+
                     self._accelerator.wait_for_everyone()
 
                     # Call step callback if provided
@@ -1293,3 +1296,19 @@ class LtxvTrainer:
             for key, value in metrics.items():
                 self._tb_writer.add_scalar(key, value, global_step=self._global_step)
             self._tb_writer.flush()
+
+    @torch.no_grad()
+    def _apply_weight_noise(self) -> None:
+        """Inject Gaussian noise into trainable weight values for flat-minima regularization."""
+        wn_cfg = self._config.optimization.weight_noise
+        if wn_cfg.mode == "none":
+            return
+
+        sigma = wn_cfg.sigma
+        for p in self._trainable_params:
+            if wn_cfg.mode == "relative":
+                rms = p.data.norm() / (p.data.numel() ** 0.5)
+                sigma_p = sigma * rms
+            else:
+                sigma_p = sigma
+            p.data.add_(torch.randn_like(p.data) * sigma_p)

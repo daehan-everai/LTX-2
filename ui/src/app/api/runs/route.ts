@@ -116,6 +116,10 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
         num_warmup_steps: uiConfig.optimization.numWarmupSteps,
       },
       enable_gradient_checkpointing: uiConfig.optimization.enableGradientCheckpointing,
+      weight_noise: {
+        mode: uiConfig.optimization.weightNoise.mode,
+        sigma: uiConfig.optimization.weightNoise.sigma,
+      },
     },
     acceleration: {
       mixed_precision_mode: 'bf16',
@@ -136,7 +140,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       videos_per_prompt: uiConfig.validation.videosPerPrompt,
       guidance_scale: uiConfig.validation.guidanceScale,
       stg_scale: 0.0,
-      stg_blocks: [28],
+      stg_blocks: null,
       stg_mode: 'stg_av',
       generate_audio: uiConfig.validation.generateAudio,
       skip_initial_validation: uiConfig.validation.skipInitialValidation,

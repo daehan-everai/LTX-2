@@ -30,10 +30,6 @@ fi
 info "Syncing Python dependencies (uv sync)..."
 uv sync
 
-# Activate the uv-managed venv so child processes (tensorboard, accelerate,
-# python3 for train.py / process_dataset.py) resolve to project dependencies
-# instead of the system Python. Equivalent to `source .venv/bin/activate`
-# but without the interactive prompt mutations.
 export VIRTUAL_ENV="$SCRIPT_DIR/.venv"
 export PATH="$VIRTUAL_ENV/bin:$PATH"
 

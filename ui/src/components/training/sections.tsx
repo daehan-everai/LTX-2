@@ -248,6 +248,27 @@ export function OptimizationSection({ config, update }: SectionProps) {
           ]}
         />
       </div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <SelectField
+          label="Weight Noise"
+          value={config.optimization.weightNoise.mode}
+          onChange={v => update('optimization', { weightNoise: { ...config.optimization.weightNoise, mode: v } })}
+          options={[
+            { value: 'none', label: 'None' },
+            { value: 'relative', label: 'Relative' },
+            { value: 'absolute', label: 'Absolute' },
+          ]}
+        />
+        {config.optimization.weightNoise.mode !== 'none' && (
+          <NumberField
+            label="Sigma"
+            value={config.optimization.weightNoise.sigma}
+            onChange={v => update('optimization', { weightNoise: { ...config.optimization.weightNoise, sigma: v } })}
+            step={0.001}
+            mono
+          />
+        )}
+      </div>
       <SwitchField
         label="Gradient Checkpointing"
         checked={config.optimization.enableGradientCheckpointing}

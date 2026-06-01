@@ -82,6 +82,10 @@ export interface TrainingConfig {
     schedulerType: string;
     numWarmupSteps: number;
     enableGradientCheckpointing: boolean;
+    weightNoise: {
+      mode: 'none' | 'relative' | 'absolute';
+      sigma: number;
+    };
   };
   flowMatching: {
     timestepSamplingMode: 'uniform' | 'shifted_logit_normal';
