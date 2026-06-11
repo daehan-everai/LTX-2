@@ -196,10 +196,8 @@ function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: n
 
 function bucketTag(src: string): string {
   const bucketName = path.basename(src);
-  const folderName = path.basename(path.dirname(path.dirname(src)));
   const hash = crypto.createHash('sha1').update(path.resolve(src)).digest('hex').slice(0, 8);
-  const prefix = folderName ? `${folderName}__${bucketName}` : bucketName;
-  return `${prefix}__${hash}`;
+  return `${bucketName}_${hash}`;
 }
 
 function hardLinkRecursive(src: string, dest: string) {
