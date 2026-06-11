@@ -73,6 +73,10 @@ export async function POST(req: Request) {
   return NextResponse.json({ ...result, config: parseJobConfig(result.config) ?? {} }, { status: 201 });
 }
 
+function nonEmptyOrNull<T>(arr: T[]): T[] | null {
+  return arr.length > 0 ? arr : null;
+}
+
 function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string | null): Record<string, unknown> {
   return {
     model: {
@@ -130,7 +134,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
     },
     validation: {
       prompts: uiConfig.validation.prompts.filter(Boolean),
-      images: uiConfig.validation.images.filter(Boolean),
+      images: nonEmptyOrNull(uiConfig.validation.images.filter(Boolean)),
       negative_prompt: uiConfig.validation.negativePrompt,
       video_dims: uiConfig.validation.videoDims,
       frame_rate: uiConfig.validation.frameRate,
