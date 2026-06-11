@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getWorkerDb, getSettingSync, nowIso, markJobFinished, type JobRow } from './db';
@@ -162,7 +163,8 @@ function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: n
   try {
     for (const src of sourceDirs) {
       const pre = path.join(src, '.precomputed');
-      const tag = path.basename(src);
+      const tag = bucketTag(src);
+      fs.writeSync(logFd, `  Source ${src} -> ${tag}\n`);
 
       for (const subdir of ['latents', 'latents_h_flip', 'conditions', 'audio_latents']) {
         const srcDir = path.join(pre, subdir);
@@ -190,6 +192,14 @@ function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: n
 
   fs.closeSync(logFd);
   return -1;
+}
+
+function bucketTag(src: string): string {
+  const bucketName = path.basename(src);
+  const folderName = path.basename(path.dirname(path.dirname(src)));
+  const hash = crypto.createHash('sha1').update(path.resolve(src)).digest('hex').slice(0, 8);
+  const prefix = folderName ? `${folderName}__${bucketName}` : bucketName;
+  return `${prefix}__${hash}`;
 }
 
 function hardLinkRecursive(src: string, dest: string) {

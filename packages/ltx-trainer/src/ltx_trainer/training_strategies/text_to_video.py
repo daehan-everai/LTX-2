@@ -359,9 +359,6 @@ class TextToVideoStrategy(TrainingStrategy):
         audio_loss = (audio_pred - inputs.audio_targets).pow(2)
         audio_loss = audio_loss.mul(audio_loss_mask).mean(dim=[-2, -1])
 
-        if inputs.sigma_loss_weights is not None:
-            audio_loss = audio_loss * inputs.sigma_loss_weights
-
         mask_mean = audio_loss_mask.mean(dim=[-2, -1])
         audio_loss = torch.where(
             mask_mean > 0,
@@ -369,4 +366,4 @@ class TextToVideoStrategy(TrainingStrategy):
             audio_loss * 0.0,
         )
 
-        return video_loss + 0.2 * audio_loss
+        return video_loss + 0.1 * audio_loss
