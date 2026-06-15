@@ -165,9 +165,11 @@ export function SwitchField({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <Switch checked={checked} onCheckedChange={onChange} />
+    <div className="space-y-2">
       <Label className="text-xs">{label}</Label>
+      <div className="flex h-9 items-center">
+        <Switch checked={checked} onCheckedChange={onChange} />
+      </div>
     </div>
   );
 }

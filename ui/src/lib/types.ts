@@ -113,6 +113,7 @@ export interface TrainingConfig {
     keepLastN: number;
     precision: string;
     saveTrainingState: 'full' | 'minimal' | 'off';
+    resume: boolean;
   };
   outputDir: string;
   seed: number;

@@ -268,12 +268,12 @@ export function OptimizationSection({ config, update }: SectionProps) {
             mono
           />
         )}
+        <SwitchField
+          label="Gradient Checkpointing"
+          checked={config.optimization.enableGradientCheckpointing}
+          onChange={v => update('optimization', { enableGradientCheckpointing: v })}
+        />
       </div>
-      <SwitchField
-        label="Gradient Checkpointing"
-        checked={config.optimization.enableGradientCheckpointing}
-        onChange={v => update('optimization', { enableGradientCheckpointing: v })}
-      />
     </Section>
   );
 }
@@ -375,6 +375,11 @@ export function CheckpointsSection({ config, update }: SectionProps) {
           ]}
         />
       </div>
+      <SwitchField
+        label="Resume training state from the loaded checkpoint"
+        checked={config.checkpoints.resume}
+        onChange={v => update('checkpoints', { resume: v })}
+      />
     </Section>
   );
 }

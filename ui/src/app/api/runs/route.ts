@@ -154,7 +154,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       keep_last_n: uiConfig.checkpoints.keepLastN,
       precision: uiConfig.checkpoints.precision,
       save_training_state: uiConfig.checkpoints.saveTrainingState,
-      no_resume: true,
+      no_resume: !uiConfig.checkpoints.resume,
     },
     flow_matching: {
       timestep_sampling_mode: uiConfig.flowMatching.timestepSamplingMode,
