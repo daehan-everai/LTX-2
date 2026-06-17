@@ -14,8 +14,7 @@
     "worker": "tsx src/worker/index.ts",
     "setup": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
-    "db:migrate-names": "tsx scripts/migrate_job_names.ts"
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
