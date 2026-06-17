@@ -102,7 +102,7 @@ function TrainingPageInner() {
 
   const handleStartTraining = async () => {
     setStartError(null);
-    const outputName = config.outputDir.replace(/\/$/, '').split('/').pop() || 'training-run';
+    const outputName = `Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
     try {
       await createRun({
         name: outputName,

@@ -16,16 +16,16 @@ export async function GET() {
     .from(jobs)
     .where(inArray(jobs.status, ['queued', 'running']))
     .all()
-    .filter(j => j.name.startsWith('Build: '));
+    .filter(j => j.name.startsWith('Dataset: '));
 
-  const buildStatusByDataset = new Map(activeBuilds.map(j => [j.name.slice('Build: '.length), j.status]));
+  const buildStatusByDataset = new Map(activeBuilds.map(j => [j.name.slice('Dataset: '.length), j.status]));
 
   return NextResponse.json(
     rows.map(r => ({
       ...r,
       buckets: parseJobConfig(r.buckets) ?? [],
       pathExists: r.path ? fs.existsSync(path.join(r.path, '.precomputed')) : false,
-      buildStatus: buildStatusByDataset.get(r.name) ?? null,
+      buildStatus: buildStatusByDataset.get(r.path) ?? null,
     })),
   );
 }
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   db.insert(jobs)
     .values({
       type: 'merge',
-      name: `Build: ${result.name}`,
+      name: `Dataset: ${result.path}`,
       status: 'queued',
       config: JSON.stringify({ sourceDirs, destDir: result.path }),
       queuePosition: nextQueuePosition(),

@@ -47,7 +47,7 @@ function syncBucketJobs(folderId: number, folderPath: string) {
     db
       .select({ name: jobs.name })
       .from(jobs)
-      .where(like(jobs.name, `${folderPath}/_buckets/%`))
+      .where(like(jobs.name, `Preprocess: ${folderPath}/_buckets/%`))
       .all()
       .map(r => r.name),
   );
@@ -56,7 +56,7 @@ function syncBucketJobs(folderId: number, folderPath: string) {
     const match = BUCKET_DIR_PATTERN.exec(dir.name)!;
     const res = Number(match[1]);
     const fc = Number(match[2]);
-    const jobName = `${folderPath}/_buckets/${res}_${fc}`;
+    const jobName = `Preprocess: ${folderPath}/_buckets/${res}_${fc}`;
 
     if (existingNames.has(jobName)) continue;
 
@@ -153,7 +153,7 @@ export async function PATCH(req: Request) {
   const candidates = db
     .select()
     .from(jobs)
-    .where(like(jobs.name, `${folder.path}/_buckets/%`))
+    .where(like(jobs.name, `Preprocess: ${folder.path}/_buckets/%`))
     .all()
     .filter(j => (TERMINAL_STATUSES as readonly string[]).includes(j.status));
 

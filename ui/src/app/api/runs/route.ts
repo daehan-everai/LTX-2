@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     .insert(jobs)
     .values({
       type: 'training',
-      name: runName || path.basename(outputDir),
+      name: runName || `Train: ${outputDir}`,
       status: 'queued',
       config: JSON.stringify({
         ...uiConfig,

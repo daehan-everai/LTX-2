@@ -50,11 +50,7 @@ export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="truncate font-mono text-sm font-medium">
-                  {job.type === 'preprocess'
-                    ? (((job.config as Record<string, unknown>).outputFolderPath as string | undefined) ?? job.name)
-                    : job.name}
-                </span>
+                <span className="truncate font-mono text-sm font-medium">{job.name}</span>
                 <StatusBadge status={job.status} className="shrink-0" />
               </div>
               {job.startedAt && (
