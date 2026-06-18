@@ -18,52 +18,92 @@ interface GeneralSectionProps {
   onChange: (config: TrainingConfig) => void;
 }
 
+// Video-only modules: self-attention (attn1), text cross-attention (attn2) and feed-forward (ff).
+const VIDEO_CORE_MODULES = [
+  'attn1.to_k',
+  'attn1.to_q',
+  'attn1.to_v',
+  'attn1.to_out.0',
+  'attn1.to_gate_logits',
+  'attn2.to_k',
+  'attn2.to_q',
+  'attn2.to_v',
+  'attn2.to_out.0',
+  'attn2.to_gate_logits',
+  'ff.net.0.proj',
+  'ff.net.2',
+];
+
+// Audio-only modules: self-attention (audio_attn1), text cross-attention (audio_attn2) and feed-forward (audio_ff).
+const AUDIO_CORE_MODULES = [
+  'audio_attn1.to_k',
+  'audio_attn1.to_q',
+  'audio_attn1.to_v',
+  'audio_attn1.to_out.0',
+  'audio_attn1.to_gate_logits',
+  'audio_attn2.to_k',
+  'audio_attn2.to_q',
+  'audio_attn2.to_v',
+  'audio_attn2.to_out.0',
+  'audio_attn2.to_gate_logits',
+  'audio_ff.net.0.proj',
+  'audio_ff.net.2',
+];
+
+// Cross-modal bridge: Q from video, K/V from audio — lets video attend to audio (audio signal impacts video).
+const AUDIO_TO_VIDEO_BRIDGE_MODULES = [
+  'audio_to_video_attn.to_k',
+  'audio_to_video_attn.to_q',
+  'audio_to_video_attn.to_v',
+  'audio_to_video_attn.to_out.0',
+  'audio_to_video_attn.to_gate_logits',
+];
+
+// Cross-modal bridge: Q from audio, K/V from video — lets audio attend to video (video signal impacts audio).
+const VIDEO_TO_AUDIO_BRIDGE_MODULES = [
+  'video_to_audio_attn.to_k',
+  'video_to_audio_attn.to_q',
+  'video_to_audio_attn.to_v',
+  'video_to_audio_attn.to_out.0',
+  'video_to_audio_attn.to_gate_logits',
+];
+
 const TARGET_MODULE_PRESETS = [
   {
-    id: 'full' as const,
+    id: 'full',
     label: 'Full',
     description: 'All modules — broad patterns match video, audio & cross-modal',
     modules: ['to_k', 'to_q', 'to_v', 'to_out.0', 'to_gate_logits', 'net.0.proj', 'net.2'],
   },
   {
-    id: 'video' as const,
+    id: 'video',
     label: 'Video',
     description: 'Video-only: self-attention, text cross-attention & feed-forward — no audio or cross-modal modules',
-    modules: [
-      'attn1.to_k',
-      'attn1.to_q',
-      'attn1.to_v',
-      'attn1.to_out.0',
-      'attn1.to_gate_logits',
-      'attn2.to_k',
-      'attn2.to_q',
-      'attn2.to_v',
-      'attn2.to_out.0',
-      'attn2.to_gate_logits',
-      'ff.net.0.proj',
-      'ff.net.2',
-    ],
+    modules: VIDEO_CORE_MODULES,
   },
   {
-    id: 'audio' as const,
+    id: 'audio',
     label: 'Audio',
     description: 'Audio-only: self-attention, text cross-attention & feed-forward — no video or cross-modal modules',
-    modules: [
-      'audio_attn1.to_k',
-      'audio_attn1.to_q',
-      'audio_attn1.to_v',
-      'audio_attn1.to_out.0',
-      'audio_attn1.to_gate_logits',
-      'audio_attn2.to_k',
-      'audio_attn2.to_q',
-      'audio_attn2.to_v',
-      'audio_attn2.to_out.0',
-      'audio_attn2.to_gate_logits',
-      'audio_ff.net.0.proj',
-      'audio_ff.net.2',
-    ],
+    modules: AUDIO_CORE_MODULES,
   },
-] as const;
+  {
+    id: 'video_bridge',
+    label: 'Video + Bridge',
+    description:
+      'Video modules + the audio→video cross-attention bridge (Q from video, K/V from audio) so audio can attend ' +
+      'into video — i.e. the audio signal impacts the video. No audio-core modules.',
+    modules: [...VIDEO_CORE_MODULES, ...AUDIO_TO_VIDEO_BRIDGE_MODULES],
+  },
+  {
+    id: 'audio_bridge',
+    label: 'Audio + Bridge',
+    description:
+      'Audio modules + the video→audio cross-attention bridge (Q from audio, K/V from video) so video can attend ' +
+      'into audio — i.e. the video signal impacts the audio. No video-core modules.',
+    modules: [...AUDIO_CORE_MODULES, ...VIDEO_TO_AUDIO_BRIDGE_MODULES],
+  },
+];
 
 export function ModelSection({ config, update }: SectionProps) {
   return (
@@ -116,9 +156,14 @@ export function LoraSection({ config, update }: SectionProps) {
           step={0.01}
         />
       </div>
+      <SwitchField
+        label="Freeze Extra Modules"
+        checked={config.lora.freezeExtraModules}
+        onChange={v => update('lora', { freezeExtraModules: v })}
+      />
       <div className="space-y-2">
         <Label className="text-xs">Target Layers</Label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {TARGET_MODULE_PRESETS.map(preset => (
             <Button
               key={preset.id}

@@ -79,6 +79,15 @@ class LoraConfig(ConfigBaseModel):
         description="List of modules to target with LoRA",
     )
 
+    freeze_extra_modules: bool = Field(
+        default=True,
+        description=(
+            "When loading a checkpoint whose LoRA coverage exceeds the configured "
+            "target_modules, inject the extra modules and freeze them instead of "
+            "dropping their weights. Frozen layers still contribute to the forward pass."
+        ),
+    )
+
 
 def _get_strategy_discriminator(v: dict | TrainingStrategyConfigBase) -> str:
     """Discriminator function for strategy config union."""

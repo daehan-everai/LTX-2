@@ -92,6 +92,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
             alpha: uiConfig.lora.alpha,
             dropout: uiConfig.lora.dropout,
             target_modules: uiConfig.lora.targetModules,
+            freeze_extra_modules: uiConfig.lora.freezeExtraModules,
           }
         : undefined,
     training_strategy: {

@@ -9,7 +9,7 @@ import torch
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 from accelerate import Accelerator, DistributedType
-from accelerate.utils import set_seed
+from accelerate.utils import DistributedDataParallelKwargs, set_seed
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 from peft.tuners.tuners_utils import BaseTunerLayer
 from peft.utils import ModulesToSaveWrapper
@@ -36,6 +36,7 @@ from ltx_trainer.config_display import print_config
 from ltx_trainer.datasets import PrecomputedDataset, collate_with_optional_audio
 from ltx_trainer.gpu_utils import free_gpu_memory, free_gpu_memory_context, get_gpu_memory_gb
 from ltx_trainer.hf_hub_utils import push_to_hub
+from ltx_trainer.lora_utils import detect_checkpoint_lora_modules, freeze_extra_lora_layers, matches_any_lora_target
 from ltx_trainer.model_loader import load_embeddings_processor, load_text_encoder
 from ltx_trainer.model_loader import load_model as load_ltx_model
 from ltx_trainer.progress import TrainingProgress
@@ -595,10 +596,23 @@ class LtxvTrainer:
     def _setup_lora(self) -> None:
         """Configure LoRA adapters for the transformer. Only called in LoRA training mode."""
         logger.debug(f"Adding LoRA adapter with rank {self._config.lora.rank}")
+        train_targets = list(self._config.lora.target_modules)
+        effective_targets = train_targets
+
+        # When freezing extra modules, inject LoRA layers for every module present in the
+        # checkpoint (not just the trainable targets) so their weights have somewhere to land.
+        if self._config.lora.freeze_extra_modules and self._config.model.load_checkpoint:
+            ckpt_path = self._find_checkpoint(self._config.model.load_checkpoint)
+            if ckpt_path:
+                ckpt_modules = detect_checkpoint_lora_modules(ckpt_path)
+                extra = sorted(p for p in ckpt_modules if not matches_any_lora_target(p, train_targets))
+                if extra:
+                    effective_targets = train_targets + extra
+
         lora_config = LoraConfig(
             r=self._config.lora.rank,
             lora_alpha=self._config.lora.alpha,
-            target_modules=self._config.lora.target_modules,
+            target_modules=effective_targets,
             lora_dropout=self._config.lora.dropout,
             init_lora_weights=True,
         )
@@ -645,7 +659,18 @@ class LtxvTrainer:
 
         # Load LoRA weights and verify all weights were loaded
         base_model = self._transformer.get_base_model()
-        set_peft_model_state_dict(base_model, state_dict)
+        load_result = set_peft_model_state_dict(base_model, state_dict)
+
+        dropped_keys = [k for k in load_result.unexpected_keys if "lora_" in k]
+        if dropped_keys:
+            logger.warning(f"⚠️ {len(dropped_keys)} LoRA weight(s) from the checkpoint were not loaded.")
+
+        # Freeze LoRA layers that came from the checkpoint but are not in the training targets.
+        # This changes requires_grad after _collect_trainable_params ran, so re-sync the list.
+        if self._config.lora.freeze_extra_modules:
+            n = freeze_extra_lora_layers(self._transformer, list(self._config.lora.target_modules))
+            self._trainable_params = [p for p in self._transformer.parameters() if p.requires_grad]
+            logger.info(f"Frozen {n} LoRA layer(s) from checkpoint that are not in training target_modules.")
 
         logger.info("✅ LoRA checkpoint loaded successfully")
 
@@ -934,6 +959,7 @@ class LtxvTrainer:
         self._accelerator = Accelerator(
             mixed_precision=self._config.acceleration.mixed_precision_mode,
             gradient_accumulation_steps=self._config.optimization.gradient_accumulation_steps,
+            kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)],
         )
 
         if self._accelerator.num_processes > 1:

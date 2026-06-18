@@ -59,6 +59,7 @@ export interface TrainingConfig {
     alpha: number;
     dropout: number;
     targetModules: string[];
+    freezeExtraModules: boolean;
   };
   trainingStrategy: {
     name: 'text_to_video';

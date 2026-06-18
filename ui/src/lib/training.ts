@@ -13,6 +13,7 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
       alpha: 48,
       dropout: 0.05,
       targetModules: ['to_k', 'to_q', 'to_v', 'to_out.0', 'to_gate_logits', 'net.0.proj', 'net.2'],
+      freezeExtraModules: true,
     },
     trainingStrategy: {
       name: 'text_to_video',
