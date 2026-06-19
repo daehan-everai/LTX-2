@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { parseJobConfig, toErrorMessage } from '@/lib/utils';
 import fs from 'fs';
 import path from 'path';
-import YAML from 'yaml';
+import YAML, { Scalar } from 'yaml';
 import type { TrainingConfig } from '@/lib/types';
 
 export async function POST(req: Request) {
@@ -77,6 +77,12 @@ function nonEmptyOrNull<T>(arr: T[]): T[] | null {
   return arr.length > 0 ? arr : null;
 }
 
+function quotedScalar(value: string): Scalar {
+  const node = new Scalar(value);
+  node.type = Scalar.QUOTE_DOUBLE;
+  return node;
+}
+
 function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string | null): Record<string, unknown> {
   return {
     model: {
@@ -127,7 +133,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       },
     },
     acceleration: {
-      mixed_precision_mode: 'bf16',
+      mixed_precision_mode: quotedScalar('bf16'),
     },
     data: {
       preprocessed_data_root: preprocessedDataRoot || '',
@@ -154,7 +160,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       interval: uiConfig.checkpoints.interval,
       keep_last_n: uiConfig.checkpoints.keepLastN,
       precision: uiConfig.checkpoints.precision,
-      save_training_state: uiConfig.checkpoints.saveTrainingState,
+      save_training_state: quotedScalar(uiConfig.checkpoints.saveTrainingState),
       no_resume: !uiConfig.checkpoints.resume,
     },
     flow_matching: {
