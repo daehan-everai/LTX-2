@@ -78,37 +78,41 @@ export async function POST(req: Request) {
 
     if (folder) {
       const datasetFilename = (config.datasetFilename as string) || 'dataset.json';
-
-      const resolution = config.resolution as number;
-      const frameCounts = (config.frameCounts as number[]) || [];
-
       config.datasetPath = path.join(folder.path, datasetFilename);
 
-      const frameCount = frameCounts[0];
-      if (resolution && frameCount !== undefined) {
-        config.outputFolderPath = path.join(folder.path, '_buckets', `${resolution}_${frameCount}`);
-      }
+      if (config.audioOnly) {
+        // Audio-only preprocessing: flat output, no resolution/frame dimension.
+        config.outputFolderPath = path.join(folder.path, '_buckets', 'audio_only');
+      } else {
+        const resolution = config.resolution as number;
+        const frameCounts = (config.frameCounts as number[]) || [];
 
-      if (resolution && frameCounts.length > 0) {
-        try {
-          const buckets = await scanBuckets(folder.path, resolution);
-
-          const bucketStrings: string[] = [];
-          for (const bucket of buckets) {
-            for (const fc of frameCounts) {
-              bucketStrings.push(`${bucket.key}x${fc}`);
-            }
-          }
-
-          if (bucketStrings.length > 0) {
-            config.resolutionBuckets = bucketStrings.join(';');
-          }
-        } catch (err) {
-          console.error('Bucket scan failed, falling back to square:', err);
+        const frameCount = frameCounts[0];
+        if (resolution && frameCount !== undefined) {
+          config.outputFolderPath = path.join(folder.path, '_buckets', `${resolution}_${frameCount}`);
         }
 
-        if (!config.resolutionBuckets) {
-          config.resolutionBuckets = frameCounts.map(fc => `${resolution}x${resolution}x${fc}`).join(';');
+        if (resolution && frameCounts.length > 0) {
+          try {
+            const buckets = await scanBuckets(folder.path, resolution);
+
+            const bucketStrings: string[] = [];
+            for (const bucket of buckets) {
+              for (const fc of frameCounts) {
+                bucketStrings.push(`${bucket.key}x${fc}`);
+              }
+            }
+
+            if (bucketStrings.length > 0) {
+              config.resolutionBuckets = bucketStrings.join(';');
+            }
+          } catch (err) {
+            console.error('Bucket scan failed, falling back to square:', err);
+          }
+
+          if (!config.resolutionBuckets) {
+            config.resolutionBuckets = frameCounts.map(fc => `${resolution}x${resolution}x${fc}`).join(';');
+          }
         }
       }
     }

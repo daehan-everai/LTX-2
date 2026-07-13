@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Loader2,
+  Music,
 } from 'lucide-react';
 
 interface Props {
@@ -64,6 +65,7 @@ export function DatasetBuilder({
           withAudio?: boolean;
           hFlip?: boolean;
           resolutionBuckets?: string;
+          audioOnly?: boolean;
         };
         const bucketKeys = cfg.resolutionBuckets ? cfg.resolutionBuckets.split(';') : [];
         const folderPath = cfg.outputFolderPath || '';
@@ -74,8 +76,9 @@ export function DatasetBuilder({
           resolution: cfg.resolution || 0,
           frameCount: (cfg.frameCounts || [0])[0],
           bucketKeys,
-          hasAudio: cfg.withAudio || false,
+          hasAudio: cfg.audioOnly || cfg.withAudio || false,
           hasHFlip: cfg.hFlip || false,
+          isAudioOnly: cfg.audioOnly || false,
         };
       });
     try {
@@ -195,6 +198,7 @@ export function DatasetBuilder({
               <div className="max-h-64 space-y-1.5 overflow-y-auto">
                 {completedJobs.map(job => {
                   const checked = selectedJobIds.has(job.id);
+                  const isAudioOnly = Boolean((job.config as { audioOnly?: boolean }).audioOnly);
                   return (
                     <button
                       key={job.id}
@@ -210,8 +214,17 @@ export function DatasetBuilder({
                       ) : (
                         <Square className="text-muted-foreground h-4 w-4 shrink-0" />
                       )}
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                      {isAudioOnly ? (
+                        <Music className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                      )}
                       <span className="text-sm">{job.name}</span>
+                      {isAudioOnly && (
+                        <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
+                          Audio Only
+                        </Badge>
+                      )}
                     </button>
                   );
                 })}

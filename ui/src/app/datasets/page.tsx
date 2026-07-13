@@ -9,7 +9,7 @@ import { useJobs } from '@/hooks/useJobs';
 import { useDatasets } from '@/hooks/useDatasets';
 import { useSettings } from '@/hooks/useSettings';
 import { SourceFolderCard } from '@/components/SourceFolderCard';
-import { FolderConfigPanel, type ResFrameConfig } from '@/components/FolderConfigPanel';
+import { FolderConfigPanel, type ResFrameConfig, type AudioConfig } from '@/components/FolderConfigPanel';
 import { ProcessingMatrix } from '@/components/ProcessingMatrix';
 import { DatasetBuilder } from '@/components/DatasetBuilder';
 import { PageHeader } from '@/components/PageHeader';
@@ -103,6 +103,21 @@ export default function DatasetsPage() {
     }
   };
 
+  const handleQueueAudioProcessing = async (config: AudioConfig) => {
+    await createJob({
+      type: 'preprocess',
+      name: `Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/audio_only`,
+      config: {
+        folderId: effectiveFolderId,
+        folderPath: selectedFolder?.path,
+        audioOnly: true,
+        withAudio: true,
+        datasetFilename: config.datasetFilename,
+        maxDuration: config.maxDuration,
+      },
+    });
+  };
+
   const handleDeleteDataset = async (id: number) => {
     setBuildError(null);
     try {
@@ -187,7 +202,11 @@ export default function DatasetsPage() {
         <TabsContent value="processing" className="space-y-4">
           {selectedFolder ? (
             <>
-              <FolderConfigPanel folder={selectedFolder} onQueueProcessing={handleQueueProcessing} />
+              <FolderConfigPanel
+                folder={selectedFolder}
+                onQueueProcessing={handleQueueProcessing}
+                onQueueAudioProcessing={handleQueueAudioProcessing}
+              />
               <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} />
             </>
           ) : (

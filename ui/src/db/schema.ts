@@ -9,7 +9,7 @@ export const sourceFolders = sqliteTable('source_folders', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   path: text('path').notNull().unique(),
   name: text('name').notNull(),
-  mediaType: text('media_type', { enum: ['images', 'videos', 'mixed'] })
+  mediaType: text('media_type', { enum: ['images', 'videos', 'mixed', 'audio'] })
     .notNull()
     .default('videos'),
   fileCount: integer('file_count').notNull().default(0),

@@ -843,6 +843,7 @@ class LtxvTrainer:
                 self._config.data.preprocessed_data_root,
                 data_sources=data_sources,
                 h_flip=h_flip,
+                include_audio_only=self._training_strategy.requires_audio,
             )
 
             logger.debug(f"Loaded dataset with {len(self._dataset):,} samples from sources: {list(data_sources)}")

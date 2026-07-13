@@ -130,6 +130,10 @@ export async function startJob(job: JobRow): Promise<number> {
 }
 
 function buildPreprocessArgs(config: Record<string, unknown>, scriptsDir: string): string[] {
+  if (config.audioOnly) {
+    return buildAudioPreprocessArgs(config, scriptsDir);
+  }
+
   const script = path.join(scriptsDir, 'process_dataset.py');
   const args = [script];
 
@@ -149,6 +153,24 @@ function buildPreprocessArgs(config: Record<string, unknown>, scriptsDir: string
   if (config.hFlip) args.push('--with-h-flip');
   if (config.withAudio) args.push('--with-audio');
   if (config.frameSampling) args.push('--frame-sampling', config.frameSampling as string);
+
+  return args;
+}
+
+function buildAudioPreprocessArgs(config: Record<string, unknown>, scriptsDir: string): string[] {
+  const script = path.join(scriptsDir, 'process_audio.py');
+  const args = [script];
+
+  const datasetPath = (config.datasetPath as string) || '';
+  args.push(datasetPath);
+
+  const modelPath = (config.modelPath as string) || getSettingSync('modelPath');
+  if (modelPath) args.push('--model-path', modelPath);
+
+  const textEncoderPath = (config.textEncoderPath as string) || getSettingSync('textEncoderPath');
+  if (textEncoderPath) args.push('--text-encoder-path', textEncoderPath);
+
+  if (config.maxDuration) args.push('--max-duration', String(config.maxDuration));
 
   return args;
 }

@@ -20,6 +20,11 @@ export interface ResFrameConfig {
   datasetFilename: string;
 }
 
+export interface AudioConfig {
+  datasetFilename: string;
+  maxDuration: number | null;
+}
+
 interface Props {
   folder: SourceFolder;
   onQueueProcessing: (
@@ -29,12 +34,15 @@ interface Props {
       config: ResFrameConfig;
     }>,
   ) => void;
+  onQueueAudioProcessing?: (config: AudioConfig) => void;
 }
 
-export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
+export function FolderConfigPanel({ folder, onQueueProcessing, onQueueAudioProcessing }: Props) {
   const [selectedResolutions, setSelectedResolutions] = useState<Set<ResolutionOption>>(new Set());
   const [selectedFrames, setSelectedFrames] = useState<Record<number, Set<FrameCountOption>>>({});
   const [configs, setConfigs] = useState<Record<string, ResFrameConfig>>({});
+  const [audioDatasetFilename, setAudioDatasetFilename] = useState('dataset.json');
+  const [audioMaxDuration, setAudioMaxDuration] = useState('');
 
   // Reset selections when switching to a different folder so jobs are not
   // queued with another folder's resolution/frame configuration.
@@ -98,6 +106,69 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
     }
     return pairs;
   }, [activeResolutions, selectedFrames, configs]);
+
+  if (folder.mediaType === 'audio') {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">
+            Configure Audio Processing: <span className="font-mono text-base break-all">{folder.path}</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-muted-foreground text-sm">
+            Audio-only clips are encoded into audio latents and text embeddings (no video). Add the resulting
+            bucket to a training dataset alongside video buckets to train audio and video in a single run.
+          </p>
+
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="audio-dataset-filename" className="text-xs">
+                Dataset file
+              </Label>
+              <Input
+                id="audio-dataset-filename"
+                className="h-8 w-[200px] font-mono text-xs"
+                value={audioDatasetFilename}
+                onChange={e => setAudioDatasetFilename(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="audio-max-duration" className="text-xs">
+                Max duration (s, optional)
+              </Label>
+              <Input
+                id="audio-max-duration"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="full"
+                className="h-8 w-[160px] font-mono text-xs"
+                value={audioMaxDuration}
+                onChange={e => setAudioMaxDuration(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end pt-2">
+            <Button
+              onClick={() => {
+                const parsed = parseFloat(audioMaxDuration);
+                onQueueAudioProcessing?.({
+                  datasetFilename: audioDatasetFilename.trim() || 'dataset.json',
+                  maxDuration: Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+                });
+              }}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Preprocess Audio
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

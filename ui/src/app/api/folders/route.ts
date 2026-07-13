@@ -8,10 +8,11 @@ import path from 'path';
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png']);
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm']);
+const AUDIO_EXTS = new Set(['.wav', '.mp3', '.ogg', '.flac', '.aac', '.m4a']);
 
 function scanFolderMeta(folderPath: string): {
   fileCount: number;
-  mediaType: 'images' | 'videos' | 'mixed';
+  mediaType: 'images' | 'videos' | 'mixed' | 'audio';
 } {
   if (!fs.existsSync(folderPath)) {
     return { fileCount: 0, mediaType: 'videos' };
@@ -20,17 +21,31 @@ function scanFolderMeta(folderPath: string): {
   const entries = fs.readdirSync(folderPath);
   let images = 0;
   let videos = 0;
+  let audio = 0;
 
   for (const entry of entries) {
     const ext = path.extname(entry).toLowerCase();
     if (IMAGE_EXTS.has(ext)) images++;
     else if (VIDEO_EXTS.has(ext)) videos++;
+    else if (AUDIO_EXTS.has(ext)) audio++;
   }
 
-  const mediaType: 'images' | 'videos' | 'mixed' =
-    images > 0 && videos > 0 ? 'mixed' : images > 0 ? 'images' : 'videos';
+  // A folder is treated as "audio" only when it contains audio and no images/videos.
+  // Otherwise audio files are ignored for typing (they'd be extracted from videos instead).
+  let mediaType: 'images' | 'videos' | 'mixed' | 'audio';
+  if (audio > 0 && images === 0 && videos === 0) {
+    mediaType = 'audio';
+  } else if (images > 0 && videos > 0) {
+    mediaType = 'mixed';
+  } else if (images > 0) {
+    mediaType = 'images';
+  } else {
+    mediaType = 'videos';
+  }
 
-  return { fileCount: images + videos, mediaType };
+  const fileCount = mediaType === 'audio' ? audio : images + videos;
+
+  return { fileCount, mediaType };
 }
 
 const BUCKET_DIR_PATTERN = /^(\d+)_(\d+)$/;
@@ -41,7 +56,8 @@ function syncBucketJobs(folderId: number, folderPath: string) {
 
   const entries = fs.readdirSync(bucketsDir, { withFileTypes: true });
   const bucketDirs = entries.filter(e => e.isDirectory() && BUCKET_DIR_PATTERN.test(e.name));
-  if (bucketDirs.length === 0) return;
+  const hasAudioOnlyBucket = fs.existsSync(path.join(bucketsDir, 'audio_only'));
+  if (bucketDirs.length === 0 && !hasAudioOnlyBucket) return;
 
   const existingNames = new Set(
     db
@@ -51,6 +67,31 @@ function syncBucketJobs(folderId: number, folderPath: string) {
       .all()
       .map(r => r.name),
   );
+
+  // Audio-only bucket (flat, no resolution/frame dimension).
+  if (hasAudioOnlyBucket) {
+    const audioJobName = `Preprocess: ${folderPath}/_buckets/audio_only`;
+    if (!existingNames.has(audioJobName)) {
+      const audioBucketPath = path.join(bucketsDir, 'audio_only');
+      db.insert(jobs)
+        .values({
+          type: 'preprocess',
+          name: audioJobName,
+          status: 'completed',
+          config: JSON.stringify({
+            folderId,
+            folderPath,
+            outputFolderPath: audioBucketPath,
+            datasetPath: path.join(folderPath, 'dataset.json'),
+            audioOnly: true,
+            withAudio: true,
+          }),
+          queuePosition: 0,
+          completedAt: new Date().toISOString(),
+        })
+        .run();
+    }
+  }
 
   for (const dir of bucketDirs) {
     const match = BUCKET_DIR_PATTERN.exec(dir.name)!;

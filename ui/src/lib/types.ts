@@ -2,7 +2,7 @@ export interface SourceFolder {
   id: number;
   path: string;
   name: string;
-  mediaType: 'images' | 'videos' | 'mixed';
+  mediaType: 'images' | 'videos' | 'mixed' | 'audio';
   fileCount: number;
   createdAt: string;
 }
@@ -45,6 +45,7 @@ export interface DatasetBucket {
   bucketKeys: string[];
   hasAudio: boolean;
   hasHFlip: boolean;
+  isAudioOnly?: boolean;
 }
 
 export interface TrainingConfig {

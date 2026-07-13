@@ -133,6 +133,13 @@ class TextToVideoStrategy(TrainingStrategy):
         """Prepare inputs for text-to-video training."""
         # Get pre-encoded latents - dataset provides uniform non-patchified format [B, C, F, H, W]
         latents = batch["latents"]
+
+        # Audio-only batch: no video latents present (has_video=False for all samples).
+        # The video branch is fed a neutral single-token dummy (no loss); only audio is trained.
+        has_video_flag = latents.get("has_video")
+        if has_video_flag is not None and not bool(has_video_flag.any()):
+            return self._prepare_audio_only_inputs(batch, timestep_sampler)
+
         video_latents = latents["latents"]
 
         # Get video dimensions (assume same for all batch elements)
@@ -237,6 +244,13 @@ class TextToVideoStrategy(TrainingStrategy):
         else:
             video_loss_mask = (~video_conditioning_mask).float()
 
+        # Guard mixed batches (batch_size > 1) that contain audio-only samples: their
+        # zero-padded video latents must not contribute to the video loss.
+        if has_video_flag is not None:
+            has_video = has_video_flag.to(device=device)
+            if not bool(has_video.all()):
+                video_loss_mask = video_loss_mask * has_video.view(-1, 1).float()
+
         # Handle audio if enabled
         audio_modality = None
         audio_targets = None
@@ -252,6 +266,81 @@ class TextToVideoStrategy(TrainingStrategy):
                 device=device,
                 dtype=dtype,
             )
+
+        return ModelInputs(
+            video=video_modality,
+            audio=audio_modality,
+            video_targets=video_targets,
+            audio_targets=audio_targets,
+            video_loss_mask=video_loss_mask,
+            audio_loss_mask=audio_loss_mask,
+        )
+
+    def _prepare_audio_only_inputs(
+        self,
+        batch: dict[str, Any],
+        timestep_sampler: TimestepSampler,
+    ) -> ModelInputs:
+        """Prepare inputs for an audio-only batch (no video latents).
+
+        The video branch receives a neutral single-token dummy latent so that the
+        audio branch can still run video-to-audio cross-attention against clean
+        context. The video loss is fully masked out; only the audio branch is trained.
+        """
+        conditions = batch["conditions"]
+        video_prompt_embeds = conditions["video_prompt_embeds"]
+        audio_prompt_embeds = conditions["audio_prompt_embeds"]
+        prompt_attention_mask = conditions["prompt_attention_mask"]
+
+        audio_latents_raw = batch["audio_latents"]["latents"]
+        device = audio_latents_raw.device
+        dtype = audio_latents_raw.dtype
+        batch_size = audio_latents_raw.shape[0]
+
+        # Sample sigmas based on the audio sequence length (drives the timestep distribution).
+        audio_latents_patched = self._audio_patchifier.patchify(audio_latents_raw.to(device=device, dtype=dtype))
+        sigmas = timestep_sampler.sample_for(audio_latents_patched)
+
+        # Neutral single-token dummy video as clean-ish cross-attention context (excluded from loss).
+        video_seq_len = 1
+        dummy_video_latents = torch.zeros(batch_size, video_seq_len, 128, device=device, dtype=dtype)
+        video_noise = torch.randn_like(dummy_video_latents)
+        sigmas_expanded = sigmas.view(-1, 1, 1)
+        noisy_video = (1 - sigmas_expanded) * dummy_video_latents + sigmas_expanded * video_noise
+        video_targets = video_noise - dummy_video_latents
+        video_timesteps = sigmas.view(-1, 1).expand(-1, video_seq_len)
+        video_positions = self._get_video_positions(
+            num_frames=1,
+            height=1,
+            width=1,
+            batch_size=batch_size,
+            fps=DEFAULT_FPS,
+            device=device,
+            dtype=torch.float32,
+        )
+
+        video_modality = Modality(
+            enabled=True,
+            sigma=sigmas,
+            latent=noisy_video,
+            timesteps=video_timesteps,
+            positions=video_positions,
+            context=video_prompt_embeds,
+            context_mask=prompt_attention_mask,
+        )
+
+        # Fully masked video loss: audio-only samples do not train the video branch.
+        video_loss_mask = torch.zeros(batch_size, video_seq_len, device=device)
+
+        audio_modality, audio_targets, audio_loss_mask = self._prepare_audio_inputs(
+            batch=batch,
+            sigmas=sigmas,
+            audio_prompt_embeds=audio_prompt_embeds,
+            prompt_attention_mask=prompt_attention_mask,
+            batch_size=batch_size,
+            device=device,
+            dtype=dtype,
+        )
 
         return ModelInputs(
             video=video_modality,
@@ -366,4 +455,9 @@ class TextToVideoStrategy(TrainingStrategy):
             audio_loss * 0.0,
         )
 
-        return video_loss + 0.1 * audio_loss
+        # When the batch carries no video training signal (audio-only), audio is the
+        # primary objective and should not be down-weighted. Otherwise keep the joint
+        # AV balance where audio is a secondary objective.
+        audio_coeff = 0.1 if bool(inputs.video_loss_mask.any()) else 1.0
+
+        return video_loss + audio_coeff * audio_loss
