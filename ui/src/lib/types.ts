@@ -70,6 +70,7 @@ export interface TrainingConfig {
     firstFrameConditioningNoise: number;
     temporalBoundaryLossWeight: number;
     temporalBoundaryFrames: number;
+    captionDropoutP: number;
   };
   optimization: {
     learningRate: number;
@@ -83,6 +84,7 @@ export interface TrainingConfig {
     schedulerType: string;
     numWarmupSteps: number;
     enableGradientCheckpointing: boolean;
+    gradientCheckpointingRatio: number;
     weightNoise: {
       mode: 'none' | 'relative' | 'absolute';
       sigma: number;

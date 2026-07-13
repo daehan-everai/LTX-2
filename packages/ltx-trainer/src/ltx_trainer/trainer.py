@@ -360,6 +360,63 @@ class LtxvTrainer:
 
         return saved_path, stats
 
+    def _empty_caption_on_device(self, dtype: torch.dtype) -> dict[str, Tensor | None]:
+        """Empty-prompt features on the training device, cast to `dtype`, cached on first use."""
+        if getattr(self, "_empty_caption", None) is None:
+            device = self._accelerator.device
+            src = self._empty_caption_features
+            self._empty_caption = {
+                "video": src["video"].to(device=device, dtype=dtype),
+                "audio": src["audio"].to(device=device, dtype=dtype) if src["audio"] is not None else None,
+                "mask": src["mask"].to(device),
+            }
+        return self._empty_caption
+
+    @staticmethod
+    def _resize_seq(tensor: Tensor, seq_len: int) -> Tensor:
+        """Resize a [1, S0, ...] tensor to seq_len along dim 1, right-aligned (Gemma left-pads)."""
+        s0 = tensor.shape[1]
+        if s0 == seq_len:
+            return tensor
+        out = tensor.new_zeros((tensor.shape[0], seq_len, *tensor.shape[2:]))
+        k = min(s0, seq_len)
+        out[:, seq_len - k:] = tensor[:, s0 - k:]
+        return out
+
+    def _apply_caption_dropout(
+        self,
+        video_features: Tensor,
+        audio_features: Tensor | None,
+        mask: Tensor,
+    ) -> tuple[Tensor, Tensor | None, Tensor]:
+        """Randomly replace captions with the empty prompt (classifier-free guidance dropout).
+
+        No-op unless caption_dropout_p > 0, the empty prompt was cached at init, and training.
+        """
+        p = getattr(self._config.training_strategy, "caption_dropout_p", 0.0)
+        if p <= 0.0 or self._empty_caption_features is None or not self._transformer.training:
+            return video_features, audio_features, mask
+
+        empty = self._empty_caption_on_device(video_features.dtype)
+        swap_audio = audio_features is not None and empty["audio"] is not None
+
+        # B == 1: swap the whole sample at the empty prompt's natural length (the connector
+        # normalizes any input length to a fixed output, so no resize is needed).
+        if video_features.shape[0] == 1:
+            if torch.rand(1).item() >= p:
+                return video_features, audio_features, mask
+            return empty["video"], (empty["audio"] if swap_audio else audio_features), empty["mask"]
+
+        # B > 1: samples share one seq length; resize the empty prompt to it and swap per
+        # sample. torch.where broadcasts the empty prompt's [1, ...] across the batch.
+        seq_len = video_features.shape[1]
+        drop = (torch.rand(video_features.shape[0], device=video_features.device) < p)[:, None, None]
+        video_features = torch.where(drop, self._resize_seq(empty["video"], seq_len), video_features)
+        mask = torch.where(drop[:, :, 0], self._resize_seq(empty["mask"], seq_len).to(mask.dtype), mask)
+        if swap_audio:
+            audio_features = torch.where(drop, self._resize_seq(empty["audio"], seq_len), audio_features)
+        return video_features, audio_features, mask
+
     def _training_step(self, batch: dict[str, dict[str, Tensor]]) -> tuple[Tensor, Tensor | None]:
         """Perform a single training step using the configured strategy.
 
@@ -377,14 +434,18 @@ class LtxvTrainer:
             audio_features = conditions["prompt_embeds"]
 
         mask = conditions["prompt_attention_mask"]
+        video_features, audio_features, mask = self._apply_caption_dropout(video_features, audio_features, mask)
         additive_mask = convert_to_additive_mask(mask, video_features.dtype)
-        video_embeds, audio_embeds, attention_mask = self._embeddings_processor.create_embeddings(
+        video_embeds, audio_embeds, _binary_mask = self._embeddings_processor.create_embeddings(
             video_features, audio_features, additive_mask
         )
 
         conditions["video_prompt_embeds"] = video_embeds
         conditions["audio_prompt_embeds"] = audio_embeds
-        conditions["prompt_attention_mask"] = attention_mask
+        # `create_embeddings` returns an all-ones mask:
+        # (`Embeddings1DConnector`/`_to_binary_mask` in ltx_core.text_encoders.gemma.embeddings_processor), so the
+        # context mask is a no-op additive bias.
+        conditions["prompt_attention_mask"] = None
 
         model_inputs = self._training_strategy.prepare_training_inputs(batch, self._timestep_sampler)
         model_inputs.sigma_loss_weights = self._get_sigma_loss_weights(model_inputs.video.sigma)
@@ -407,7 +468,8 @@ class LtxvTrainer:
         #   1. Loads the pure Gemma text encoder on GPU
         #   2. Loads the embeddings processor (feature extractor + connectors)
         #   3. If validation prompts are configured, computes and caches their embeddings
-        #   4. Unloads the Gemma model entirely, keeps the embeddings processor for training
+        #   4. If caption dropout is enabled, computes an empty embedding
+        #   5. Unloads the Gemma model entirely, keeps the embeddings processor for training
 
         # Load text encoder (pure Gemma LLM) on GPU
         logger.debug("Loading text encoder...")
@@ -449,6 +511,20 @@ class LtxvTrainer:
                             ),
                         )
                     )
+
+        # Cache empty-prompt features for caption dropout while Gemma is still loaded.
+        self._empty_caption_features: dict[str, Tensor | None] | None = None
+        caption_dropout_p = getattr(self._config.training_strategy, "caption_dropout_p", 0.0)
+        if caption_dropout_p > 0.0:
+            with torch.inference_mode():
+                empty_hs, empty_mask = text_encoder.encode("", padding_side="left")
+                empty_video, empty_audio = self._embeddings_processor.feature_extractor(empty_hs, empty_mask, "left")
+            self._empty_caption_features = {
+                "video": empty_video.detach().cpu().contiguous(),
+                "audio": empty_audio.detach().cpu().contiguous() if empty_audio is not None else None,
+                "mask": empty_mask.detach().cpu().contiguous(),
+            }
+            logger.info("Cached empty-prompt features for caption dropout (p=%.3f)", caption_dropout_p)
 
         # Unload Gemma model and feature extractor, keep only connectors for training
         del text_encoder
@@ -546,6 +622,9 @@ class LtxvTrainer:
         else:
             self._sigma_loss_weights = None
 
+        if self._sigma_loss_weights is not None:
+            self._sigma_loss_weights = self._sigma_loss_weights.to(self._accelerator.device)
+
     @staticmethod
     def _precompute_bell_weights(n: int = 1000) -> torch.Tensor:
         """Precompute mean-normalised bell-shaped timestep loss weights.
@@ -589,9 +668,9 @@ class LtxvTrainer:
         if self._sigma_loss_weights is None:
             return None
         n = self._sigma_loss_weights.shape[0]
-        # sigma=1 (max noise) → index 0; sigma=0 (clean) → index n-1
-        idx = ((1.0 - sigmas) * (n - 1)).long().clamp(0, n - 1).cpu()
-        return self._sigma_loss_weights[idx].to(device=sigmas.device, dtype=sigmas.dtype)
+        # sigma=1 (max noise) → index 0; sigma=0 (clean) → index n-1.
+        idx = ((1.0 - sigmas) * (n - 1)).long().clamp(0, n - 1)
+        return self._sigma_loss_weights[idx].to(dtype=sigmas.dtype)
 
     def _setup_lora(self) -> None:
         """Configure LoRA adapters for the transformer. Only called in LoRA training mode."""
@@ -783,7 +862,10 @@ class LtxvTrainer:
             self._transformer.get_base_model() if hasattr(self._transformer, "get_base_model") else self._transformer
         )
 
-        transformer.set_gradient_checkpointing(self._config.optimization.enable_gradient_checkpointing)
+        transformer.set_gradient_checkpointing(
+            self._config.optimization.enable_gradient_checkpointing,
+            ratio=self._config.optimization.gradient_checkpointing_ratio,
+        )
 
         # Keep frozen models on CPU for memory efficiency
         self._vae_decoder = self._vae_decoder.to("cpu")
@@ -875,6 +957,8 @@ class LtxvTrainer:
         lr = opt_cfg.learning_rate
         params = dict(opt_cfg.optimizer_params or {})
         if opt_cfg.optimizer_type == "adamw":
+            if "fused" not in params and torch.cuda.is_available():
+                params["fused"] = True
             optimizer = AdamW(self._trainable_params, lr=lr, **params)
         elif opt_cfg.optimizer_type == "adamw8bit":
             # noinspection PyUnresolvedReferences
@@ -953,6 +1037,13 @@ class LtxvTrainer:
 
     def _setup_accelerator(self) -> None:
         """Initialize the Accelerator with the appropriate settings."""
+
+        # Enable TF32 for fp32 matmuls. Forward/backward are bf16 (unaffected); only Muon's
+        # fp32 Newton-Schulz iterations are touched, and those are precision-tolerant.
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.set_float32_matmul_precision("high")
 
         # All distributed setup (DDP/FSDP, number of processes, etc.) is controlled by
         # the user's Accelerate configuration (accelerate config / accelerate launch).

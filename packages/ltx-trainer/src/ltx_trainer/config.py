@@ -186,6 +186,18 @@ class OptimizationConfig(ConfigBaseModel):
         description="Enable gradient checkpointing to save memory at the cost of slower training",
     )
 
+    gradient_checkpointing_ratio: float = Field(
+        default=1.0,
+        description=(
+            "Fraction of transformer blocks to checkpoint when gradient checkpointing is enabled. "
+            "1.0 checkpoints every block (max memory savings, slowest); lower values checkpoint an "
+            "evenly spaced subset to trade memory for speed on GPUs with headroom (e.g. 0.5 on H100-80GB). "
+            "Only used when enable_gradient_checkpointing is True."
+        ),
+        ge=0.0,
+        le=1.0,
+    )
+
     weight_noise: WeightNoiseConfig = Field(
         default_factory=WeightNoiseConfig,
         description="Per-step Gaussian perturbation of trainable weights for flat-minima regularization",

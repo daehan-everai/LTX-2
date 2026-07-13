@@ -110,6 +110,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       first_frame_conditioning_noise: uiConfig.trainingStrategy.firstFrameConditioningNoise,
       temporal_boundary_loss_weight: uiConfig.trainingStrategy.temporalBoundaryLossWeight,
       temporal_boundary_frames: uiConfig.trainingStrategy.temporalBoundaryFrames,
+      caption_dropout_p: uiConfig.trainingStrategy.captionDropoutP,
     },
     optimization: {
       learning_rate: uiConfig.optimization.learningRate,
@@ -127,6 +128,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
         num_warmup_steps: uiConfig.optimization.numWarmupSteps,
       },
       enable_gradient_checkpointing: uiConfig.optimization.enableGradientCheckpointing,
+      gradient_checkpointing_ratio: uiConfig.optimization.gradientCheckpointingRatio,
       weight_noise: {
         mode: uiConfig.optimization.weightNoise.mode,
         sigma: uiConfig.optimization.weightNoise.sigma,

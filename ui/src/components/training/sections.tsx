@@ -211,6 +211,12 @@ export function StrategySection({ config, update }: SectionProps) {
           value={config.trainingStrategy.temporalBoundaryFrames}
           onChange={v => update('trainingStrategy', { temporalBoundaryFrames: v })}
         />
+        <NumberField
+          label="Caption Dropout"
+          value={config.trainingStrategy.captionDropoutP}
+          onChange={v => update('trainingStrategy', { captionDropoutP: Math.min(1, Math.max(0, v)) })}
+          step={0.05}
+        />
       </div>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         <SwitchField
@@ -313,11 +319,22 @@ export function OptimizationSection({ config, update }: SectionProps) {
             mono
           />
         )}
+      </div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <SwitchField
           label="Gradient Checkpointing"
           checked={config.optimization.enableGradientCheckpointing}
           onChange={v => update('optimization', { enableGradientCheckpointing: v })}
         />
+        {config.optimization.enableGradientCheckpointing && (
+          <NumberField
+            label="Checkpointing Ratio"
+            value={config.optimization.gradientCheckpointingRatio}
+            onChange={v => update('optimization', { gradientCheckpointingRatio: Math.min(1, Math.max(0, v)) })}
+            step={0.05}
+            mono
+          />
+        )}
       </div>
     </Section>
   );

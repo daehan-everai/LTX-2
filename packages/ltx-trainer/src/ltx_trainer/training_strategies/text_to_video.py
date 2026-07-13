@@ -86,6 +86,18 @@ class TextToVideoConfig(TrainingStrategyConfigBase):
         ge=1,
     )
 
+    caption_dropout_p: float = Field(
+        default=0.0,
+        description=(
+            "Probability of replacing a sample's caption with the empty prompt during training "
+            "(classifier-free guidance dropout). Keeps the unconditional branch meaningful so "
+            "CFG at inference (guidance_scale > 1) stays effective as the LoRA strengthens. "
+            "Typical range 0.05-0.1. Default 0.0 (disabled)."
+        ),
+        ge=0.0,
+        le=1.0,
+    )
+
 
 class TextToVideoStrategy(TrainingStrategy):
     """Text-to-video training strategy.
@@ -135,10 +147,8 @@ class TextToVideoStrategy(TrainingStrategy):
         latents = batch["latents"]
         video_latents = latents["latents"]
 
-        # Get video dimensions (assume same for all batch elements)
-        num_frames = latents["num_frames"][0].item()
-        height = latents["height"][0].item()
-        width = latents["width"][0].item()
+        # Get video (latent) dimensions directly from the tensor shape [B, C, F, H, W].
+        _, _, num_frames, height, width = video_latents.shape
 
         # Patchify latents: [B, C, F, H, W] -> [B, seq_len, C]
         video_latents = self._video_patchifier.patchify(video_latents)
@@ -226,16 +236,20 @@ class TextToVideoStrategy(TrainingStrategy):
             context_mask=prompt_attention_mask,
         )
 
-        # Video loss mask: float weights for loss computation (0 = excluded, 1 = normal, >1 = boosted)
-        if self.config.temporal_boundary_loss_weight > 1.0 and video_conditioning_mask.any():
+        # Video loss mask: float weights for loss computation (0 = excluded, 1 = normal, >1 = boosted).
+        video_loss_mask = (~video_conditioning_mask).float()
+        if self.config.temporal_boundary_loss_weight > 1.0:
             frame_size = height * width
             boundary_end = frame_size + self.config.temporal_boundary_frames * frame_size
-            cond_active = video_conditioning_mask[:, :frame_size].any(dim=1)
-            weight_mask = torch.ones(batch_size, video_seq_len, device=device)
-            weight_mask[cond_active, frame_size:boundary_end] = self.config.temporal_boundary_loss_weight
-            video_loss_mask = weight_mask * (~video_conditioning_mask).float()
-        else:
-            video_loss_mask = (~video_conditioning_mask).float()
+            # Per-sample: whether the first (conditioning) frame is active. Shape [B, 1].
+            cond_active = video_conditioning_mask[:, :frame_size].any(dim=1, keepdim=True).float()
+            # Boundary region indicator over sequence positions. Shape [1, seq_len].
+            positions = torch.arange(video_seq_len, device=device)
+            boundary_region = ((positions >= frame_size) & (positions < boundary_end)).unsqueeze(0).float()
+            # weight = 1 everywhere, boosted to temporal_boundary_loss_weight inside the
+            # boundary region for samples whose first frame is a conditioning frame.
+            extra = (self.config.temporal_boundary_loss_weight - 1.0) * cond_active * boundary_region
+            video_loss_mask *= 1.0 + extra
 
         # Handle audio if enabled
         audio_modality = None
@@ -267,7 +281,7 @@ class TextToVideoStrategy(TrainingStrategy):
         batch: dict[str, Any],
         sigmas: Tensor,
         audio_prompt_embeds: Tensor,
-        prompt_attention_mask: Tensor,
+        prompt_attention_mask: Tensor | None,
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
