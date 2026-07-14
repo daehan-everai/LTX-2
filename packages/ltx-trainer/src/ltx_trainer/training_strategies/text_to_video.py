@@ -51,20 +51,6 @@ class TextToVideoConfig(TrainingStrategyConfigBase):
         "(50% chance per sample). Requires the dataset to be preprocessed with --with-h-flip.",
     )
 
-    first_frame_conditioning_noise: float = Field(
-        default=0.0,
-        description=(
-            "Noise level (sigma) applied to first-frame conditioning latents during training. "
-            "Adds flow-matching noise at this level to the clean conditioning tokens, and sets "
-            "their per-token timestep to this value (not 0) to stay consistent with the noisy content. "
-            "Reduces over-reliance on first-frame lighting statistics and improves robustness when "
-            "inference conditioning images differ in domain from training frames (e.g. AI-generated "
-            "vs. real video). Recommended range: 0.05–0.15. Default 0.0 (disabled)."
-        ),
-        ge=0.0,
-        le=1.0,
-    )
-
     temporal_boundary_loss_weight: float = Field(
         default=1.0,
         description=(
@@ -190,29 +176,15 @@ class TextToVideoStrategy(TrainingStrategy):
         sigmas_expanded = sigmas.view(-1, 1, 1)
         noisy_video = (1 - sigmas_expanded) * video_latents + sigmas_expanded * video_noise
 
-        # For conditioning tokens: use clean latents, or slightly noisy latents when augmentation is enabled.
-        # Augmentation reduces over-reliance on first-frame lighting statistics, improving robustness
-        # to domain gap between training frames (real video) and inference frames (AI-generated images).
+        # For conditioning tokens, use clean latents
         conditioning_mask_expanded = video_conditioning_mask.unsqueeze(-1)
-        sigma_cond = self.config.first_frame_conditioning_noise
-        if sigma_cond > 0.0 and video_conditioning_mask.any():
-            cond_noise = torch.randn_like(video_latents)
-            noisy_cond = (1.0 - sigma_cond) * video_latents + sigma_cond * cond_noise
-            noisy_video = torch.where(conditioning_mask_expanded, noisy_cond, noisy_video)
-        else:
-            noisy_video = torch.where(conditioning_mask_expanded, video_latents, noisy_video)
+        noisy_video = torch.where(conditioning_mask_expanded, video_latents, noisy_video)
 
         # Compute video targets (velocity prediction)
         video_targets = video_noise - video_latents
 
-        # Create per-token timesteps.
-        # Conditioning tokens get cond_sigma (their actual noise level) rather than 0,
-        # so the model sees a consistent timestep for the noise it receives.
-        video_timesteps = self._create_per_token_timesteps(
-            video_conditioning_mask,
-            sigmas.squeeze(),
-            cond_sigma=sigma_cond,
-        )
+        # Create per-token timesteps (conditioning tokens get timestep 0)
+        video_timesteps = self._create_per_token_timesteps(video_conditioning_mask, sigmas.squeeze())
 
         # Generate video positions using ltx_core's native implementation
         video_positions = self._get_video_positions(

@@ -191,8 +191,21 @@ export function LoraSection({ config, update }: SectionProps) {
 }
 
 export function StrategySection({ config, update }: SectionProps) {
+  const isV2V = config.trainingStrategy.name === 'video_to_video';
+
   return (
     <Section title="Training Strategy">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <SelectField
+          label="Strategy"
+          value={config.trainingStrategy.name}
+          onChange={v => update('trainingStrategy', { name: v })}
+          options={[
+            { value: 'text_to_video', label: 'Text / Image to Video' },
+            { value: 'video_to_video', label: 'Video to Video (IC-LoRA)' },
+          ]}
+        />
+      </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <NumberField
           label="First Frame Cond. P"
@@ -218,18 +231,20 @@ export function StrategySection({ config, update }: SectionProps) {
           step={0.05}
         />
       </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
-        <SwitchField
-          label="Audio"
-          checked={config.trainingStrategy.withAudio}
-          onChange={v => update('trainingStrategy', { withAudio: v })}
-        />
-        <SwitchField
-          label="H-Flip Augmentation"
-          checked={config.trainingStrategy.hFlip}
-          onChange={v => update('trainingStrategy', { hFlip: v })}
-        />
-      </div>
+      {!isV2V && (
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          <SwitchField
+            label="Audio"
+            checked={config.trainingStrategy.withAudio}
+            onChange={v => update('trainingStrategy', { withAudio: v })}
+          />
+          <SwitchField
+            label="H-Flip Augmentation"
+            checked={config.trainingStrategy.hFlip}
+            onChange={v => update('trainingStrategy', { hFlip: v })}
+          />
+        </div>
+      )}
     </Section>
   );
 }
@@ -341,6 +356,8 @@ export function OptimizationSection({ config, update }: SectionProps) {
 }
 
 export function ValidationSection({ config, update }: SectionProps) {
+  const isV2V = config.trainingStrategy.name === 'video_to_video';
+
   return (
     <Section title="Validation" defaultOpen={false}>
       <div className="space-y-4">
@@ -360,6 +377,30 @@ export function ValidationSection({ config, update }: SectionProps) {
             placeholder="/path/to/image.jpeg"
           />
         </div>
+        {isV2V && (
+          <>
+            <div className="space-y-2">
+              <Label className="text-xs">Reference Videos (one path per line, must match prompt count)</Label>
+              <ListInput
+                value={config.validation.referenceVideos}
+                onChange={v => update('validation', { referenceVideos: v })}
+                placeholder="/path/to/reference.mp4"
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+              <NumberField
+                label="Reference Downscale Factor"
+                value={config.validation.referenceDownscaleFactor}
+                onChange={v => update('validation', { referenceDownscaleFactor: Math.max(1, Math.round(v)) })}
+              />
+              <SwitchField
+                label="Include Reference in Output (side-by-side)"
+                checked={config.validation.includeReferenceInOutput}
+                onChange={v => update('validation', { includeReferenceInOutput: v })}
+              />
+            </div>
+          </>
+        )}
         <TextField
           label="Negative Prompt"
           value={config.validation.negativePrompt}

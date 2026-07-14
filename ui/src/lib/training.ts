@@ -21,7 +21,6 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
       withAudio: true,
       audioLatentsDir: 'audio_latents',
       hFlip: true,
-      firstFrameConditioningNoise: 0.0,
       temporalBoundaryLossWeight: 1.2,
       temporalBoundaryFrames: 3,
       captionDropoutP: 0.0,
@@ -47,6 +46,9 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
     validation: {
       prompts: [],
       images: [],
+      referenceVideos: [],
+      referenceDownscaleFactor: 1,
+      includeReferenceInOutput: true,
       negativePrompt: 'worst quality, inconsistent motion, blurry, jittery, distorted',
       videoDims: [416, 608, 241],
       frameRate: 24.0,

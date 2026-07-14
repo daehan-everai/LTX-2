@@ -39,6 +39,39 @@ class VideoToVideoConfig(TrainingStrategyConfigBase):
         description="Directory name for latents of reference videos",
     )
 
+    temporal_boundary_loss_weight: float = Field(
+        default=1.0,
+        description=(
+            "Loss weight multiplier applied to the first N non-conditioning frames immediately "
+            "following the conditioned first frame of the target video. Values > 1.0 increase "
+            "gradient signal at the temporal boundary, strengthening the model's use of the "
+            "conditioning anchor. Only active when first_frame_conditioning_p > 0. "
+            "Recommended range: 1.5–3.0. Default 1.0 (disabled)."
+        ),
+        ge=1.0,
+    )
+
+    temporal_boundary_frames: int = Field(
+        default=1,
+        description=(
+            "Number of non-conditioning latent frames to apply temporal_boundary_loss_weight to. "
+            "Only active when temporal_boundary_loss_weight > 1.0."
+        ),
+        ge=1,
+    )
+
+    caption_dropout_p: float = Field(
+        default=0.0,
+        description=(
+            "Probability of replacing a sample's caption with the empty prompt during training "
+            "(classifier-free guidance dropout). Keeps the unconditional branch meaningful so "
+            "CFG at inference (guidance_scale > 1) stays effective as the LoRA strengthens. "
+            "Typical range 0.05-0.1. Default 0.0 (disabled)."
+        ),
+        ge=0.0,
+        le=1.0,
+    )
+
 
 class VideoToVideoStrategy(TrainingStrategy):
     """Video-to-video training strategy for IC-LoRA.
@@ -81,15 +114,9 @@ class VideoToVideoStrategy(TrainingStrategy):
         target_latents = latents["latents"]
         ref_latents = batch["ref_latents"]["latents"]
 
-        # Get dimensions
-        num_frames = latents["num_frames"][0].item()
-        height = latents["height"][0].item()
-        width = latents["width"][0].item()
-
-        ref_latents_info = batch["ref_latents"]
-        ref_frames = ref_latents_info["num_frames"][0].item()
-        ref_height = ref_latents_info["height"][0].item()
-        ref_width = ref_latents_info["width"][0].item()
+        # Get video (latent) dimensions directly from the tensor shapes [B, C, F, H, W].
+        _, _, num_frames, height, width = target_latents.shape
+        _, _, ref_frames, ref_height, ref_width = ref_latents.shape
 
         # Infer reference downscale factor from dimension ratios
         # This allows training with downscaled reference videos for efficiency
@@ -133,7 +160,6 @@ class VideoToVideoStrategy(TrainingStrategy):
         ref_seq_len = ref_latents.shape[1]
         target_seq_len = target_latents.shape[1]
         device = target_latents.device
-        dtype = target_latents.dtype
 
         # Create conditioning mask
         # Reference tokens are always conditioning (timestep=0)
@@ -181,7 +207,7 @@ class VideoToVideoStrategy(TrainingStrategy):
             batch_size=batch_size,
             fps=fps,
             device=device,
-            dtype=dtype,
+            dtype=torch.float32,
         )
 
         # Scale reference positions to match target coordinate space
@@ -200,7 +226,7 @@ class VideoToVideoStrategy(TrainingStrategy):
             batch_size=batch_size,
             fps=fps,
             device=device,
-            dtype=dtype,
+            dtype=torch.float32,
         )
 
         # Concatenate positions along sequence dimension
@@ -217,11 +243,22 @@ class VideoToVideoStrategy(TrainingStrategy):
             context_mask=prompt_attention_mask,
         )
 
-        # Loss mask: only compute loss on non-conditioning target tokens
-        # Reference tokens: all False (no loss)
-        # Target tokens: True where not conditioning
-        ref_loss_mask = torch.zeros(batch_size, ref_seq_len, dtype=torch.bool, device=device)
-        target_loss_mask = ~target_conditioning_mask
+        # Loss mask: float weights (0 = excluded, 1 = normal, >1 = boosted).
+        # Reference tokens: 0 (no loss). Target tokens: 1 where not conditioning.
+        ref_loss_mask = torch.zeros(batch_size, ref_seq_len, dtype=torch.float32, device=device)
+        target_loss_mask = (~target_conditioning_mask).float()
+        if self.config.temporal_boundary_loss_weight > 1.0:
+            frame_size = height * width
+            boundary_end = frame_size + self.config.temporal_boundary_frames * frame_size
+            # Per-sample: whether the first (conditioning) frame of the target is active. Shape [B, 1].
+            cond_active = target_conditioning_mask[:, :frame_size].any(dim=1, keepdim=True).float()
+            # Boundary region indicator over target-local sequence positions. Shape [1, target_seq_len].
+            positions_idx = torch.arange(target_seq_len, device=device)
+            boundary_region = ((positions_idx >= frame_size) & (positions_idx < boundary_end)).unsqueeze(0).float()
+            # weight = 1 everywhere, boosted to temporal_boundary_loss_weight inside the
+            # boundary region for samples whose first target frame is a conditioning frame.
+            extra = (self.config.temporal_boundary_loss_weight - 1.0) * cond_active * boundary_region
+            target_loss_mask *= 1.0 + extra
         video_loss_mask = torch.cat([ref_loss_mask, target_loss_mask], dim=1)
 
         return ModelInputs(
@@ -240,22 +277,25 @@ class VideoToVideoStrategy(TrainingStrategy):
         _audio_pred: Tensor | None,
         inputs: ModelInputs,
     ) -> Tensor:
-        """Compute masked loss only on target portion."""
-        # Extract target portion of prediction
+        """Compute masked loss on target portion only. Returns per-sample loss [B,]."""
+        # Extract target portion of prediction (skip prepended reference tokens)
         ref_seq_len = inputs.ref_seq_len
         target_pred = video_pred[:, ref_seq_len:, :]
 
         # Get target portion of loss mask
         target_loss_mask = inputs.video_loss_mask[:, ref_seq_len:]
 
-        # Compute loss
+        # Masked MSE, normalized per-sample over (seq, channels) → [B,]
         loss = (target_pred - inputs.video_targets).pow(2)
-
-        # Apply loss mask
         loss_mask = target_loss_mask.unsqueeze(-1).float()
-        loss = loss.mul(loss_mask).div(loss_mask.mean())
+        loss = loss.mul(loss_mask).mean(dim=[-2, -1])
+        loss = loss.div(loss_mask.mean(dim=[-2, -1]).clamp(min=1e-8))
 
-        return loss.mean()
+        # Apply per-sample sigma loss weights (e.g. bell weighting) if configured
+        if inputs.sigma_loss_weights is not None:
+            loss = loss * inputs.sigma_loss_weights
+
+        return loss
 
     def get_checkpoint_metadata(self) -> dict[str, Any]:
         """Get metadata for checkpoint files."""

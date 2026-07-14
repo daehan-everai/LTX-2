@@ -98,6 +98,8 @@ export default function DatasetsPage() {
           frameSampling: c.config.frameSampling,
           withAudio: c.config.withAudio,
           datasetFilename: c.config.datasetFilename,
+          referenceColumn: c.config.referenceColumn,
+          referenceDownscaleFactor: c.config.referenceDownscaleFactor,
         },
       });
     }

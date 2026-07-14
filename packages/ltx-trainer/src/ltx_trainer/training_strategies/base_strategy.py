@@ -220,28 +220,20 @@ class TrainingStrategy(ABC):
         return latent_coords.to(dtype)
 
     @staticmethod
-    def _create_per_token_timesteps(
-        conditioning_mask: Tensor,
-        sampled_sigma: Tensor,
-        cond_sigma: float = 0.0,
-    ) -> Tensor:
+    def _create_per_token_timesteps(conditioning_mask: Tensor, sampled_sigma: Tensor) -> Tensor:
         """Create per-token timesteps based on conditioning mask.
         Args:
             conditioning_mask: Boolean mask of shape (batch_size, sequence_length),
-                where True = conditioning token, False = target token (use sigma)
+                where True = conditioning token (timestep=0), False = target token (use sigma)
             sampled_sigma: Sampled sigma values of shape (batch_size,) or (batch_size, 1, 1)
-            cond_sigma: Noise level applied to conditioning tokens. When 0.0 (default),
-                conditioning tokens receive timestep=0 (clean). When > 0.0, conditioning tokens
-                receive this value as their timestep, matching the noise actually applied to them.
         Returns:
             Timesteps tensor of shape [batch_size, sequence_length]
         """
         # Expand to match conditioning mask shape [B, seq_len]
         expanded_sigma = sampled_sigma.view(-1, 1).expand_as(conditioning_mask)
 
-        # Conditioning tokens get cond_sigma (0.0 = clean by default), target tokens get sampled sigma
-        cond_timestep = torch.full_like(expanded_sigma, cond_sigma)
-        return torch.where(conditioning_mask, cond_timestep, expanded_sigma)
+        # Conditioning tokens get 0, target tokens get the sampled sigma
+        return torch.where(conditioning_mask, torch.zeros_like(expanded_sigma), expanded_sigma)
 
     @staticmethod
     def _create_first_frame_conditioning_mask(

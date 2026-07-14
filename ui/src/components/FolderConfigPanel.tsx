@@ -18,6 +18,9 @@ export interface ResFrameConfig {
   frameSampling: 'uniform' | 'head';
   withAudio: boolean;
   datasetFilename: string;
+  /** Dataset column with reference video paths (IC-LoRA). Empty = disabled. */
+  referenceColumn: string;
+  referenceDownscaleFactor: number;
 }
 
 interface Props {
@@ -71,6 +74,8 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
           frameSampling: highFrameCount ? 'uniform' : 'head',
           withAudio: highFrameCount,
           datasetFilename: 'dataset.json',
+          referenceColumn: '',
+          referenceDownscaleFactor: 1,
         },
       }));
     }
@@ -170,6 +175,23 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
                         {res} x {frame === 1 ? 'img' : `${frame}f`}
                       </Badge>
 
+                      <Input
+                        className="h-8 min-w-[140px] flex-1 font-mono text-xs"
+                        value={cfg.datasetFilename}
+                        onChange={e => updateConfig(key, { datasetFilename: e.target.value })}
+                      />
+
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          id={`${key}-reference`}
+                          checked={cfg.referenceColumn.trim() !== ''}
+                          onCheckedChange={v => updateConfig(key, { referenceColumn: v ? 'reference_path' : '' })}
+                        />
+                        <Label htmlFor={`${key}-reference`} className="text-xs">
+                          Reference
+                        </Label>
+                      </div>
+
                       <div className="flex items-center gap-1.5">
                         <Switch
                           id={`${key}-hflip`}
@@ -204,12 +226,6 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
                           <SelectItem value="head">Head</SelectItem>
                         </SelectContent>
                       </Select>
-
-                      <Input
-                        className="h-8 w-[170px] font-mono text-xs"
-                        value={cfg.datasetFilename}
-                        onChange={e => updateConfig(key, { datasetFilename: e.target.value })}
-                      />
                     </div>
                   );
                 })}

@@ -102,6 +102,17 @@ function TrainingPageInner() {
 
   const handleStartTraining = async () => {
     setStartError(null);
+    if (config.trainingStrategy.name === 'video_to_video' && config.validation.interval > 0) {
+      const prompts = config.validation.prompts.filter(Boolean);
+      const refs = config.validation.referenceVideos.filter(Boolean);
+      if (refs.length !== prompts.length) {
+        setStartError(
+          `Video-to-video validation requires one reference video per prompt ` +
+            `(${prompts.length} prompt(s), ${refs.length} reference video(s)).`,
+        );
+        return;
+      }
+    }
     const outputName = `Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
     try {
       await createRun({
@@ -210,6 +221,12 @@ function TrainingPageInner() {
                 <span className="text-muted-foreground">Mode</span>
                 <Badge variant="secondary" className="text-[10px]">
                   {config.model.trainingMode === 'full' ? 'Full' : 'LoRA'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Strategy</span>
+                <Badge variant="secondary" className="text-[10px]">
+                  {config.trainingStrategy.name === 'video_to_video' ? 'V2V (IC-LoRA)' : 'T2V'}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">

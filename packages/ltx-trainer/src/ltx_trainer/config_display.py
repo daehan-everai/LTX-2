@@ -63,10 +63,6 @@ def print_config(config: LtxTrainerConfig) -> None:
         strategy_items.append(("First Frame Cond P", str(cfg.training_strategy.first_frame_conditioning_p)))
     if hasattr(cfg.training_strategy, "h_flip"):
         strategy_items.append(("H-Flip", fmt(cfg.training_strategy.h_flip)))
-    if hasattr(cfg.training_strategy, "first_frame_conditioning_noise"):
-        noise = cfg.training_strategy.first_frame_conditioning_noise
-        if noise > 0.0:
-            strategy_items.append(("First Frame Noise", f"{noise:.3f}"))
     sections.append(("🎯 Strategy", strategy_items))
 
     sections.extend(
