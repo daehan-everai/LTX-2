@@ -91,6 +91,7 @@ class MediaDataset(Dataset):
         reshape_mode: str = "center",
         with_audio: bool = False,
         frame_sampling: str = "head",
+        skip_rows_without_media: bool = False,
     ) -> None:
         """
         Initialize the media dataset.
@@ -101,6 +102,8 @@ class MediaDataset(Dataset):
             reshape_mode: How to crop videos ("center", "random")
             with_audio: Whether to extract audio from video files
             frame_sampling: How to select frames from the video ("head", "uniform")
+            skip_rows_without_media: When True, rows with a missing/empty value in
+                ``video_column`` are skipped instead of raising
         """
         super().__init__()
 
@@ -115,7 +118,11 @@ class MediaDataset(Dataset):
         self.main_media_paths = self._load_video_paths(main_media_column)
 
         # Then load reference video paths
-        self.video_paths = self._load_video_paths(video_column)
+        self.video_paths = self._load_video_paths(video_column, allow_missing=skip_rows_without_media)
+
+        # Drop rows without a media value (optional column), keeping pairs aligned
+        if skip_rows_without_media:
+            self._filter_rows_without_media()
 
         # Filter out videos with insufficient frames
         self._filter_valid_videos()
@@ -211,34 +218,48 @@ class MediaDataset(Dataset):
             logger.debug(f"Could not extract audio from {video_path}: {e}")
             return None
 
-    def _load_video_paths(self, column: str) -> list[Path]:
-        """Load video paths from the specified data source."""
+    def _load_video_paths(self, column: str, allow_missing: bool = False) -> list[Path | None]:
+        """Load video paths from the specified data source.
+        When ``allow_missing`` is True, rows with a missing/empty value in ``column``
+        yield ``None`` instead of raising, so callers can filter them out while
+        keeping row alignment with other columns.
+        """
         if self.dataset_file.suffix == ".csv":
-            return self._load_video_paths_from_csv(column)
+            video_paths = self._load_video_paths_from_csv(column, allow_missing)
         elif self.dataset_file.suffix == ".json":
-            return self._load_video_paths_from_json(column)
+            video_paths = self._load_video_paths_from_json(column, allow_missing)
         elif self.dataset_file.suffix == ".jsonl":
-            return self._load_video_paths_from_jsonl(column)
+            video_paths = self._load_video_paths_from_jsonl(column, allow_missing)
         else:
             raise ValueError("Expected `dataset_file` to be a path to a CSV, JSON, or JSONL file.")
 
-    def _load_video_paths_from_csv(self, column: str) -> list[Path]:
-        """Load video paths from a CSV file."""
-        df = pd.read_csv(self.dataset_file)
-        if column not in df.columns:
-            raise ValueError(f"Column '{column}' not found in CSV file")
-
-        data_root = self.dataset_file.parent
-        video_paths = [data_root / Path(line.strip()) for line in df[column].tolist()]
-
-        # Validate that all paths exist
-        invalid_paths = [path for path in video_paths if not path.is_file()]
+        # Validate that all present paths exist
+        invalid_paths = [path for path in video_paths if path is not None and not path.is_file()]
         if invalid_paths:
             raise ValueError(f"Found {len(invalid_paths)} invalid video paths. First few: {invalid_paths[:5]}")
 
         return video_paths
 
-    def _load_video_paths_from_json(self, column: str) -> list[Path]:
+    def _resolve_column_value(self, value: Any, column: str, allow_missing: bool) -> Path | None:
+        """Convert a raw column value to a resolved path, or None when optional and absent."""
+        is_missing = value is None or (isinstance(value, float) and pd.isna(value)) or not str(value).strip()
+        if is_missing:
+            if allow_missing:
+                return None
+            raise ValueError(f"Missing value for column '{column}' in dataset entry")
+        return self.dataset_file.parent / Path(str(value).strip())
+
+    def _load_video_paths_from_csv(self, column: str, allow_missing: bool = False) -> list[Path | None]:
+        """Load video paths from a CSV file."""
+        df = pd.read_csv(self.dataset_file)
+        if column not in df.columns:
+            if allow_missing:
+                return [None] * len(df)
+            raise ValueError(f"Column '{column}' not found in CSV file")
+
+        return [self._resolve_column_value(value, column, allow_missing) for value in df[column].tolist()]
+
+    def _load_video_paths_from_json(self, column: str, allow_missing: bool = False) -> list[Path | None]:
         """Load video paths from a JSON file."""
         with open(self.dataset_file, "r", encoding="utf-8") as file:
             data = json.load(file)
@@ -246,37 +267,29 @@ class MediaDataset(Dataset):
         if not isinstance(data, list):
             raise ValueError("JSON file must contain a list of objects")
 
-        data_root = self.dataset_file.parent
-        video_paths = []
-        for entry in data:
-            if column not in entry:
-                raise ValueError(f"Key '{column}' not found in JSON entry")
-            video_paths.append(data_root / Path(entry[column].strip()))
+        return [self._resolve_column_value(entry.get(column), column, allow_missing) for entry in data]
 
-        # Validate that all paths exist
-        invalid_paths = [path for path in video_paths if not path.is_file()]
-        if invalid_paths:
-            raise ValueError(f"Found {len(invalid_paths)} invalid video paths. First few: {invalid_paths[:5]}")
-
-        return video_paths
-
-    def _load_video_paths_from_jsonl(self, column: str) -> list[Path]:
+    def _load_video_paths_from_jsonl(self, column: str, allow_missing: bool = False) -> list[Path | None]:
         """Load video paths from a JSONL file."""
-        data_root = self.dataset_file.parent
         video_paths = []
         with open(self.dataset_file, "r", encoding="utf-8") as file:
             for line in file:
                 entry = json.loads(line)
-                if column not in entry:
-                    raise ValueError(f"Key '{column}' not found in JSONL entry")
-                video_paths.append(data_root / Path(entry[column].strip()))
-
-        # Validate that all paths exist
-        invalid_paths = [path for path in video_paths if not path.is_file()]
-        if invalid_paths:
-            raise ValueError(f"Found {len(invalid_paths)} invalid video paths. First few: {invalid_paths[:5]}")
+                video_paths.append(self._resolve_column_value(entry.get(column), column, allow_missing))
 
         return video_paths
+
+    def _filter_rows_without_media(self) -> None:
+        """Drop rows whose (optional) media value is missing, keeping pairs aligned."""
+        total = len(self.video_paths)
+        kept = [(video, main) for video, main in zip(self.video_paths, self.main_media_paths) if video is not None]
+
+        skipped = total - len(kept)
+        if skipped > 0:
+            logger.info(f"Skipping {skipped} of {total} rows without a value in the media column")
+
+        self.video_paths = [video for video, _ in kept]
+        self.main_media_paths = [main for _, main in kept]
 
     def _filter_valid_videos(self) -> None:
         """Filter out videos with insufficient frames."""
@@ -464,6 +477,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     audio_output_dir: str | None = None,
     with_h_flip: bool = False,
     frame_sampling: str = "head",
+    skip_rows_without_media: bool = False,
 ) -> None:
     """
     Process videos and save latent representations.
@@ -482,6 +496,8 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         audio_output_dir: Directory to save audio latents (required if with_audio=True)
         with_h_flip: Whether to also encode horizontally flipped videos and save to a sibling directory
         frame_sampling: How to select frames from the video ("head" or "uniform")
+        skip_rows_without_media: Skip rows with a missing/empty value in video_column
+            instead of raising
     """
     # Validate audio parameters
     if with_audio and audio_output_dir is None:
@@ -499,6 +515,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         reshape_mode=reshape_mode,
         with_audio=with_audio,
         frame_sampling=frame_sampling,
+        skip_rows_without_media=skip_rows_without_media,
     )
     logger.info(f"Loaded {len(dataset)} valid media files")
 

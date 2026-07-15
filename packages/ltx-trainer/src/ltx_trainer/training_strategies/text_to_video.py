@@ -123,6 +123,9 @@ class TextToVideoStrategy(TrainingStrategy):
 
         return sources
 
+    def get_optional_data_sources(self) -> set[str]:
+        return {"audio_latents"} if self.config.with_audio else set()
+
     def prepare_training_inputs(
         self,
         batch: dict[str, Any],

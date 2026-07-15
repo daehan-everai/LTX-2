@@ -137,6 +137,7 @@ def preprocess_dataset(  # noqa: PLR0913
                 batch_size=batch_size,
                 device=device,
                 vae_tiling=vae_tiling,
+                skip_rows_without_media=True,
             )
 
     # Handle decoding if requested (for verification)

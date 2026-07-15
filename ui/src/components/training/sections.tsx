@@ -231,20 +231,20 @@ export function StrategySection({ config, update }: SectionProps) {
           step={0.05}
         />
       </div>
-      {!isV2V && (
-        <div className="flex flex-wrap gap-x-6 gap-y-2">
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {!isV2V && (
           <SwitchField
             label="Audio"
             checked={config.trainingStrategy.withAudio}
             onChange={v => update('trainingStrategy', { withAudio: v })}
           />
-          <SwitchField
-            label="H-Flip Augmentation"
-            checked={config.trainingStrategy.hFlip}
-            onChange={v => update('trainingStrategy', { hFlip: v })}
-          />
-        </div>
-      )}
+        )}
+        <SwitchField
+          label="H-Flip Augmentation"
+          checked={config.trainingStrategy.hFlip}
+          onChange={v => update('trainingStrategy', { hFlip: v })}
+        />
+      </div>
     </Section>
   );
 }

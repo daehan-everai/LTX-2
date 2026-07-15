@@ -87,6 +87,7 @@ function buildTrainingStrategyYaml(uiConfig: TrainingConfig): Record<string, unk
   const shared = {
     name: uiConfig.trainingStrategy.name,
     first_frame_conditioning_p: uiConfig.trainingStrategy.firstFrameConditioningP,
+    h_flip: uiConfig.trainingStrategy.hFlip,
     temporal_boundary_loss_weight: uiConfig.trainingStrategy.temporalBoundaryLossWeight,
     temporal_boundary_frames: uiConfig.trainingStrategy.temporalBoundaryFrames,
     caption_dropout_p: uiConfig.trainingStrategy.captionDropoutP,
@@ -100,7 +101,6 @@ function buildTrainingStrategyYaml(uiConfig: TrainingConfig): Record<string, unk
     ...shared,
     with_audio: uiConfig.trainingStrategy.withAudio,
     audio_latents_dir: uiConfig.trainingStrategy.audioLatentsDir,
-    h_flip: uiConfig.trainingStrategy.hFlip,
   };
 }
 
