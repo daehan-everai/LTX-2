@@ -139,7 +139,7 @@ class OptimizationConfig(ConfigBaseModel):
     )
 
     batch_size: int = Field(
-        default=2,
+        default=1,
         description="Batch size for training",
     )
 

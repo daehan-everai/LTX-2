@@ -409,6 +409,14 @@ class TextToVideoStrategy(TrainingStrategy):
         # Audio loss mask: True = compute loss. False for video-only samples.
         audio_loss_mask = has_audio.unsqueeze(1).expand(-1, audio_seq_len)
 
+        # Batches that mix audio lengths are zero-padded up to the longest sample by the
+        # collate function; those padded frames carry no signal and must not train.
+        num_time_steps = audio_data.get("num_time_steps")
+        if num_time_steps is not None and torch.is_tensor(num_time_steps) and num_time_steps.numel() == batch_size:
+            frame_indices = torch.arange(audio_seq_len, device=device).unsqueeze(0)
+            within_length = frame_indices < num_time_steps.to(device).view(-1, 1)
+            audio_loss_mask = audio_loss_mask & within_length
+
         return audio_modality, audio_targets, audio_loss_mask
 
     def compute_loss(
@@ -444,9 +452,4 @@ class TextToVideoStrategy(TrainingStrategy):
             audio_loss * 0.0,
         )
 
-        # When the batch carries no video training signal (audio-only), audio is the
-        # primary objective and should not be down-weighted. Otherwise keep the joint
-        # AV balance where audio is a secondary objective.
-        audio_coeff = 0.1 if bool(inputs.video_loss_mask.any()) else 1.0
-
-        return video_loss + audio_coeff * audio_loss
+        return video_loss + 0.1 * audio_loss

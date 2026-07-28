@@ -144,12 +144,18 @@ class Embeddings1DConnector(torch.nn.Module):
         learnable_registers = torch.tile(self.learnable_registers, (num_registers_duplications, 1))
         attention_mask_binary = (attention_mask.squeeze(1).squeeze(1).unsqueeze(-1) >= -9000.0).int()
 
-        non_zero_hidden_states = hidden_states[:, attention_mask_binary.squeeze().bool(), :]
-        non_zero_nums = non_zero_hidden_states.shape[1]
-        pad_length = hidden_states.shape[1] - non_zero_nums
-        adjusted_hidden_states = torch.nn.functional.pad(non_zero_hidden_states, pad=(0, 0, 0, pad_length), value=0)
-        flipped_mask = torch.flip(attention_mask_binary, dims=[1])
-        hidden_states = flipped_mask * adjusted_hidden_states + (1 - flipped_mask) * learnable_registers
+        # Move each sample's valid tokens to the front, keeping their relative order (stable sort).
+        # Done per row so that samples with different valid-token counts can share a batch.
+        order = torch.argsort(1 - attention_mask_binary.squeeze(-1), dim=1, stable=True)
+        adjusted_hidden_states = torch.gather(
+            hidden_states, dim=1, index=order.unsqueeze(-1).expand(-1, -1, hidden_states.shape[-1])
+        )
+
+        # Keep the front-aligned valid tokens, fill the remaining positions with registers.
+        valid_counts = attention_mask_binary.sum(dim=1, keepdim=True)
+        positions = torch.arange(hidden_states.shape[1], device=hidden_states.device).view(1, -1, 1)
+        front_mask = (positions < valid_counts).to(attention_mask_binary.dtype)
+        hidden_states = front_mask * adjusted_hidden_states + (1 - front_mask) * learnable_registers
 
         attention_mask = torch.full_like(
             attention_mask,
@@ -174,10 +180,12 @@ class Embeddings1DConnector(torch.nn.Module):
             tuple[torch.Tensor, torch.Tensor]: Processed features and the corresponding (possibly modified) mask.
         """
         if self.num_learnable_registers:
-            hidden_states, attention_mask = self._replace_padded_with_learnable_registers(hidden_states, attention_mask)
+            hidden_states, attention_mask = self._replace_padded_with_learnable_registers(
+                hidden_states, attention_mask
+            )
 
         indices_grid = torch.arange(hidden_states.shape[1], dtype=torch.float32, device=hidden_states.device)
-        indices_grid = indices_grid[None, None, :]
+        indices_grid = indices_grid[None, None, :].expand(hidden_states.shape[0], -1, -1)
         freq_grid_generator = generate_freq_grid_np if self.double_precision_rope else generate_freq_grid_pytorch
         freqs_cis = precompute_freqs_cis(
             indices_grid=indices_grid,
