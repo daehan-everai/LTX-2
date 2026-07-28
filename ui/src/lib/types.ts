@@ -63,14 +63,16 @@ export interface TrainingConfig {
     freezeExtraModules: boolean;
   };
   trainingStrategy: {
-    name: 'text_to_video';
+    name: 'text_to_video' | 'video_to_video';
     firstFrameConditioningP: number;
+    // text_to_video only
     withAudio: boolean;
     audioLatentsDir: string;
     hFlip: boolean;
-    firstFrameConditioningNoise: number;
+    // shared
     temporalBoundaryLossWeight: number;
     temporalBoundaryFrames: number;
+    captionDropoutP: number;
   };
   optimization: {
     learningRate: number;
@@ -84,6 +86,7 @@ export interface TrainingConfig {
     schedulerType: string;
     numWarmupSteps: number;
     enableGradientCheckpointing: boolean;
+    gradientCheckpointingRatio: number;
     weightNoise: {
       mode: 'none' | 'relative' | 'absolute';
       sigma: number;
@@ -99,6 +102,9 @@ export interface TrainingConfig {
   validation: {
     prompts: string[];
     images: string[];
+    referenceVideos: string[];
+    referenceDownscaleFactor: number;
+    includeReferenceInOutput: boolean;
     negativePrompt: string;
     videoDims: [number, number, number];
     frameRate: number;

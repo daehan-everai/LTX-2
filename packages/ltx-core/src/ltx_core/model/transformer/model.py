@@ -67,6 +67,8 @@ class LTXModel(torch.nn.Module):
     ):
         super().__init__()
         self._enable_gradient_checkpointing = False
+        self._gradient_checkpointing_ratio = 1.0
+        self._checkpointed_block_indices: set[int] = set()
         self.cross_attention_adaln = cross_attention_adaln
         self.use_middle_indices_grid = use_middle_indices_grid
         self.rope_type = rope_type
@@ -327,15 +329,41 @@ class LTXModel(torch.nn.Module):
         )
         self.block_input_processor = BlockPerturbationsProcessor()
 
-    def set_gradient_checkpointing(self, enable: bool) -> None:
+    def set_gradient_checkpointing(self, enable: bool, ratio: float = 1.0) -> None:
         """Enable or disable gradient checkpointing for transformer blocks.
         Gradient checkpointing trades compute for memory by recomputing activations
         during the backward pass instead of storing them. This can significantly
         reduce memory usage at the cost of ~20-30% slower training.
         Args:
-            enable: Whether to enable gradient checkpointing
+            enable: Whether to enable gradient checkpointing at all.
+            ratio: Fraction of blocks to checkpoint when ``enable`` is True, in [0, 1].
+                1.0 checkpoints every block (maximum memory savings, slowest).
+                0.0 checkpoints no block (equivalent to disabling). Intermediate values
+                checkpoint an evenly spaced subset, e.g. 0.25 checkpoints roughly every
+                4th block, trading some memory for speed on GPUs with headroom.
         """
         self._enable_gradient_checkpointing = enable
+        self._gradient_checkpointing_ratio = max(0.0, min(1.0, ratio))
+        self._checkpointed_block_indices = self._compute_checkpointed_block_indices(
+            num_blocks=len(self.transformer_blocks),
+            ratio=self._gradient_checkpointing_ratio,
+        )
+
+    @staticmethod
+    def _compute_checkpointed_block_indices(num_blocks: int, ratio: float) -> set[int]:
+        """Select an evenly spaced set of block indices to checkpoint.
+        The count is ``round(num_blocks * ratio)``; indices are spread across the full
+        depth so recompute cost and retained-activation memory are balanced along the stack.
+        """
+        if ratio >= 1.0:
+            return set(range(num_blocks))
+        num_to_checkpoint = round(num_blocks * ratio)
+        if num_to_checkpoint <= 0:
+            return set()
+        if num_to_checkpoint >= num_blocks:
+            return set(range(num_blocks))
+        step = num_blocks / num_to_checkpoint
+        return {min(num_blocks - 1, int(i * step)) for i in range(num_to_checkpoint)}
 
     def _process_transformer_blocks(
         self,
@@ -366,7 +394,11 @@ class LTXModel(torch.nn.Module):
                     cross_attn_type=PerturbationType.SKIP_V2A_CROSS_ATTN,
                 )
 
-            if self._enable_gradient_checkpointing and self.training:
+            if (
+                self._enable_gradient_checkpointing
+                and self.training
+                and block_idx in self._checkpointed_block_indices
+            ):
                 video, audio = torch.utils.checkpoint.checkpoint(
                     block,
                     video,

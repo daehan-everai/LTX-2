@@ -154,6 +154,16 @@ function buildPreprocessArgs(config: Record<string, unknown>, scriptsDir: string
   if (config.withAudio) args.push('--with-audio');
   if (config.frameSampling) args.push('--frame-sampling', config.frameSampling as string);
 
+  // IC-LoRA (video-to-video) reference video preprocessing
+  const referenceColumn = (config.referenceColumn as string) || '';
+  if (referenceColumn.trim()) {
+    args.push('--reference-column', referenceColumn.trim());
+    const downscale = Number(config.referenceDownscaleFactor) || 1;
+    if (downscale > 1) {
+      args.push('--reference-downscale-factor', String(downscale));
+    }
+  }
+
   return args;
 }
 
@@ -188,7 +198,7 @@ function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: n
       const tag = bucketTag(src);
       fs.writeSync(logFd, `  Source ${src} -> ${tag}\n`);
 
-      for (const subdir of ['latents', 'latents_h_flip', 'conditions', 'audio_latents']) {
+      for (const subdir of ['latents', 'latents_h_flip', 'conditions', 'audio_latents', 'reference_latents']) {
         const srcDir = path.join(pre, subdir);
         if (!fs.existsSync(srcDir)) continue;
 

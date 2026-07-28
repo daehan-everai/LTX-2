@@ -83,7 +83,29 @@ function quotedScalar(value: string): Scalar {
   return node;
 }
 
+function buildTrainingStrategyYaml(uiConfig: TrainingConfig): Record<string, unknown> {
+  const shared = {
+    name: uiConfig.trainingStrategy.name,
+    first_frame_conditioning_p: uiConfig.trainingStrategy.firstFrameConditioningP,
+    h_flip: uiConfig.trainingStrategy.hFlip,
+    temporal_boundary_loss_weight: uiConfig.trainingStrategy.temporalBoundaryLossWeight,
+    temporal_boundary_frames: uiConfig.trainingStrategy.temporalBoundaryFrames,
+    caption_dropout_p: uiConfig.trainingStrategy.captionDropoutP,
+  };
+
+  if (uiConfig.trainingStrategy.name === 'video_to_video') {
+    return shared;
+  }
+
+  return {
+    ...shared,
+    with_audio: uiConfig.trainingStrategy.withAudio,
+    audio_latents_dir: uiConfig.trainingStrategy.audioLatentsDir,
+  };
+}
+
 function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string | null): Record<string, unknown> {
+  const isV2V = uiConfig.trainingStrategy.name === 'video_to_video';
   return {
     model: {
       model_path: uiConfig.model.modelPath || null,
@@ -101,16 +123,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
             freeze_extra_modules: uiConfig.lora.freezeExtraModules,
           }
         : undefined,
-    training_strategy: {
-      name: uiConfig.trainingStrategy.name,
-      first_frame_conditioning_p: uiConfig.trainingStrategy.firstFrameConditioningP,
-      with_audio: uiConfig.trainingStrategy.withAudio,
-      audio_latents_dir: uiConfig.trainingStrategy.audioLatentsDir,
-      h_flip: uiConfig.trainingStrategy.hFlip,
-      first_frame_conditioning_noise: uiConfig.trainingStrategy.firstFrameConditioningNoise,
-      temporal_boundary_loss_weight: uiConfig.trainingStrategy.temporalBoundaryLossWeight,
-      temporal_boundary_frames: uiConfig.trainingStrategy.temporalBoundaryFrames,
-    },
+    training_strategy: buildTrainingStrategyYaml(uiConfig),
     optimization: {
       learning_rate: uiConfig.optimization.learningRate,
       steps: uiConfig.optimization.steps,
@@ -127,6 +140,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
         num_warmup_steps: uiConfig.optimization.numWarmupSteps,
       },
       enable_gradient_checkpointing: uiConfig.optimization.enableGradientCheckpointing,
+      gradient_checkpointing_ratio: uiConfig.optimization.gradientCheckpointingRatio,
       weight_noise: {
         mode: uiConfig.optimization.weightNoise.mode,
         sigma: uiConfig.optimization.weightNoise.sigma,
@@ -142,6 +156,13 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
     validation: {
       prompts: uiConfig.validation.prompts.filter(Boolean),
       images: nonEmptyOrNull(uiConfig.validation.images.filter(Boolean)),
+      ...(isV2V
+        ? {
+            reference_videos: nonEmptyOrNull((uiConfig.validation.referenceVideos ?? []).filter(Boolean)),
+            reference_downscale_factor: uiConfig.validation.referenceDownscaleFactor || 1,
+            include_reference_in_output: uiConfig.validation.includeReferenceInOutput,
+          }
+        : {}),
       negative_prompt: uiConfig.validation.negativePrompt,
       video_dims: uiConfig.validation.videoDims,
       frame_rate: uiConfig.validation.frameRate,
