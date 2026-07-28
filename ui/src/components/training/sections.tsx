@@ -88,6 +88,14 @@ const TARGET_MODULE_PRESETS = [
     modules: AUDIO_CORE_MODULES,
   },
   {
+    id: 'video_audio',
+    label: 'Video + Audio',
+    description:
+      'Both branches: self-attention, text cross-attention & feed-forward for video and audio — excludes only the ' +
+      'cross-modal bridges, so neither modality attends into the other.',
+    modules: [...VIDEO_CORE_MODULES, ...AUDIO_CORE_MODULES],
+  },
+  {
     id: 'video_bridge',
     label: 'Video + Bridge',
     description:
