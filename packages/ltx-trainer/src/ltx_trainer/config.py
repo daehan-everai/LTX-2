@@ -108,6 +108,9 @@ class WeightNoiseConfig(ConfigBaseModel):
 
     Biases training toward flat loss minima, spreads learning across the LoRA rank budget,
     and resists memorization on small datasets.
+
+    The perturbation is persistent, but every saved checkpoint holds pre-noise weights.
+    Only params that received a non-zero gradient in the step are perturbed.
     """
 
     mode: Literal["none", "relative", "absolute"] = Field(
@@ -122,6 +125,12 @@ class WeightNoiseConfig(ConfigBaseModel):
         description="Noise scale. In relative mode, multiplied by each tensor's weight RMS. "
         "Typical useful range: 0.01–0.017. Only used when mode is not 'none'.",
         gt=0.0,
+    )
+
+    preserve_norm: bool = Field(
+        default=True,
+        description="Rescale each perturbed tensor back to its pre-noise norm, so the noise "
+        "rotates the weights without inflating their magnitude over a long run.",
     )
 
 
