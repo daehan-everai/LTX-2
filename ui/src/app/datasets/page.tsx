@@ -11,6 +11,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { SourceFolderCard } from '@/components/SourceFolderCard';
 import { FolderConfigPanel, type ResFrameConfig, type AudioConfig } from '@/components/FolderConfigPanel';
 import { ProcessingMatrix } from '@/components/ProcessingMatrix';
+import { AudioProcessingStatus } from '@/components/AudioProcessingStatus';
 import { DatasetBuilder } from '@/components/DatasetBuilder';
 import { PageHeader } from '@/components/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -209,7 +210,11 @@ export default function DatasetsPage() {
                 onQueueProcessing={handleQueueProcessing}
                 onQueueAudioProcessing={handleQueueAudioProcessing}
               />
-              <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} />
+              {selectedFolder.mediaType === 'audio' ? (
+                <AudioProcessingStatus jobs={jobs} folderId={selectedFolder.id} />
+              ) : (
+                <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} />
+              )}
             </>
           ) : (
             <EmptyState className="p-8">
