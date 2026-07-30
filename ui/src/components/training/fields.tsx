@@ -192,7 +192,7 @@ export function ListInput({
     if (joined !== text.split('\n').filter(Boolean).join('\n')) {
       setText(joined);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   return (

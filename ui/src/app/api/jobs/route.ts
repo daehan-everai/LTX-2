@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const config: Record<string, unknown> = { ...((body.config as Record<string, unknown>) || {}) };
+  const config: Record<string, unknown> = { ...(body.config as Record<string, unknown>) };
 
   if (body.type === 'preprocess' && config.folderId) {
     const folder = db

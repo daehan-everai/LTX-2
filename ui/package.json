@@ -9,7 +9,7 @@
     "start": "concurrently --kill-others-on-fail -n next,worker -c cyan,yellow \"next start --port ${PORT:-8675}\" \"tsx src/worker/index.ts\"",
     "start:next": "next start --port ${PORT:-8675}",
     "build_and_start": "npm install && npm run build && npm run start",
-    "lint": "next lint",
+    "lint": "oxlint",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "worker": "tsx src/worker/index.ts",
     "setup": "drizzle-kit push",
@@ -34,9 +34,10 @@
     "yaml": "^2.7.0"
   },
   "overrides": {
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.18",
     "esbuild": ">=0.25.0",
-    "shell-quote": "^1.8.4"
+    "shell-quote": "^1.8.5",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
@@ -46,8 +47,7 @@
     "@types/react-dom": "^19.0.0",
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.10",
-    "eslint": "^9.16.0",
-    "eslint-config-next": "^15.5.18",
+    "oxlint": "^1.76.0",
     "prettier": "^3.5.0",
     "prettier-basic": "^1.0.0",
     "tsx": "^4.19.0",
