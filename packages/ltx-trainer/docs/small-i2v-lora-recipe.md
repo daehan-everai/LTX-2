@@ -5,7 +5,7 @@ small, video-only dataset where every inference request supplies a first frame.
 
 The profile uses rank/alpha 32, video attention projections only, learning rate
 `1e-4`, AdamW, linear decay to `1e-5`, BF16, shifted-logit-normal timestep
-sampling, and an effective batch of four. These settings preserve the official
+sampling, and an effective batch of one. These settings preserve the official
 LTX I2V starting point while avoiding the extra capacity of FFN adapters.
 
 `first_frame_conditioning_p` is `1.0` because this profile is I2V-only. Set it

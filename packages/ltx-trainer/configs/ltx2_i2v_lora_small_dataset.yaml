@@ -31,7 +31,7 @@ training_strategy:
   first_frame_conditioning_p: 1.0
   with_audio: false
   h_flip: false
-  temporal_boundary_loss_weight: 2.0
+  temporal_boundary_loss_weight: 1.0
   temporal_boundary_frames: 1
   caption_dropout_p: 0.0
 
@@ -39,14 +39,14 @@ optimization:
   learning_rate: 1e-4
   steps: 2000
   batch_size: 1
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 1
   max_grad_norm: 1.0
   optimizer_type: adamw
   scheduler_type: linear
   scheduler_params:
     end_factor: 0.1
   enable_gradient_checkpointing: true
-  gradient_checkpointing_ratio: 0.5
+  gradient_checkpointing_ratio: 1.0
 
 acceleration:
   mixed_precision_mode: bf16
@@ -76,8 +76,8 @@ validation:
   skip_initial_validation: false
 
 checkpoints:
-  interval: 100
-  keep_last_n: 3
+  interval: 250
+  keep_last_n: 8
   precision: bfloat16
   no_resume: true
   save_training_state: minimal
