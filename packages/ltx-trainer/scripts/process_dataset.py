@@ -52,6 +52,7 @@ def preprocess_dataset(  # noqa: PLR0913
     load_text_encoder_in_8bit: bool = False,
     with_h_flip: bool = False,
     frame_sampling: str = "head",
+    reuse_precomputed_video: bool = False,
 ) -> None:
     """Run the preprocessing pipeline with the given arguments."""
     # Validate dataset file
@@ -65,21 +66,24 @@ def preprocess_dataset(  # noqa: PLR0913
     if lora_trigger:
         logger.info(f'LoRA trigger word "{lora_trigger}" will be prepended to all captions')
 
-    with free_gpu_memory_context():
-        # Process captions using the dedicated function
-        compute_captions_embeddings(
-            dataset_file=dataset_file,
-            output_dir=str(conditions_dir),
-            model_path=model_path,
-            text_encoder_path=text_encoder_path,
-            caption_column=caption_column,
-            media_column=video_column,
-            lora_trigger=lora_trigger,
-            remove_llm_prefixes=remove_llm_prefixes,
-            batch_size=batch_size,
-            device=device,
-            load_in_8bit=load_text_encoder_in_8bit,
-        )
+    if reuse_precomputed_video:
+        logger.info("Reusing precomputed caption embeddings and video latents")
+    else:
+        with free_gpu_memory_context():
+            # Process captions using the dedicated function
+            compute_captions_embeddings(
+                dataset_file=dataset_file,
+                output_dir=str(conditions_dir),
+                model_path=model_path,
+                text_encoder_path=text_encoder_path,
+                caption_column=caption_column,
+                media_column=video_column,
+                lora_trigger=lora_trigger,
+                remove_llm_prefixes=remove_llm_prefixes,
+                batch_size=batch_size,
+                device=device,
+                load_in_8bit=load_text_encoder_in_8bit,
+            )
 
     # Process videos using the dedicated function
     audio_latents_dir = None
@@ -101,6 +105,7 @@ def preprocess_dataset(  # noqa: PLR0913
             audio_output_dir=str(audio_latents_dir) if audio_latents_dir else None,
             with_h_flip=with_h_flip,
             frame_sampling=frame_sampling,
+            reuse_precomputed_video=reuse_precomputed_video,
         )
 
         # Process reference videos if reference_column is provided
@@ -274,6 +279,10 @@ def main(  # noqa: PLR0913
         help="How to select frames from the video: 'head' (keep first N) or 'uniform' "
         "(even sampling across full duration).",
     ),
+    reuse_precomputed_video: bool = typer.Option(
+        default=False,
+        help="Reuse caption embeddings and video latents already present in --output-dir; only compute audio",
+    ),
 ) -> None:
     """Preprocess a video dataset by computing and saving latents and text embeddings.
     The dataset must be a CSV, JSON, or JSONL file with columns for captions and video paths.
@@ -334,6 +343,7 @@ def main(  # noqa: PLR0913
         load_text_encoder_in_8bit=load_text_encoder_in_8bit,
         with_h_flip=with_h_flip,
         frame_sampling=frame_sampling,
+        reuse_precomputed_video=reuse_precomputed_video,
     )
 
 

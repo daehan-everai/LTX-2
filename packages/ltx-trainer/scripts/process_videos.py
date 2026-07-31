@@ -478,6 +478,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     with_h_flip: bool = False,
     frame_sampling: str = "head",
     skip_rows_without_media: bool = False,
+    reuse_precomputed_video: bool = False,
 ) -> None:
     """
     Process videos and save latent representations.
@@ -498,6 +499,8 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         frame_sampling: How to select frames from the video ("head" or "uniform")
         skip_rows_without_media: Skip rows with a missing/empty value in video_column
             instead of raising
+        reuse_precomputed_video: Require and reuse existing video latent files while
+            still extracting and encoding audio. This avoids loading the video VAE.
     """
     # Validate audio parameters
     if with_audio and audio_output_dir is None:
@@ -535,9 +538,11 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         h_flip_output_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"H-flip augmentation enabled. Flipped latents will be saved to {h_flip_output_path}")
 
-    # Load video VAE encoder
-    with console.status(f"[bold]Loading video VAE encoder from [cyan]{model_path}[/]...", spinner="dots"):
-        vae = load_video_vae_encoder(model_path, device=torch_device, dtype=torch.bfloat16)
+    # Load the video VAE only when video latents need to be computed.
+    vae = None
+    if not reuse_precomputed_video:
+        with console.status(f"[bold]Loading video VAE encoder from [cyan]{model_path}[/]...", spinner="dots"):
+            vae = load_video_vae_encoder(model_path, device=torch_device, dtype=torch.bfloat16)
 
     # Load audio VAE encoder and audio processor if needed
     audio_vae_encoder = None
@@ -568,6 +573,8 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     # Track audio statistics
     audio_success_count = 0
     audio_skip_count = 0
+    reused_video_count = 0
+    reused_audio_count = 0
 
     # Process batches
     with Progress(
@@ -586,36 +593,49 @@ def compute_latents(  # noqa: PLR0913, PLR0915
             # Get video tensor - shape is [B, F, C, H, W] from DataLoader
             video = batch["video"]
 
-            # Encode video
-            with torch.inference_mode():
-                video_latent_data = encode_video(vae=vae, video=video, use_tiling=vae_tiling)
+            output_rel_paths = [Path(path).with_suffix(".pt") for path in batch["main_media_relative_path"]]
 
-                h_flip_latent_data = None
-                if with_h_flip:
-                    h_flip_latent_data = encode_video(
-                        vae=vae,
-                        video=video.flip(dims=[-1]),
-                        use_tiling=vae_tiling,
+            if reuse_precomputed_video:
+                missing = [str(path) for path in output_rel_paths if not (output_path / path).is_file()]
+                if missing:
+                    raise FileNotFoundError(
+                        "--reuse-precomputed-video was set but video latents are missing: " + ", ".join(missing)
                     )
+                video_latent_data = None
+                h_flip_latent_data = None
+                reused_video_count += len(output_rel_paths)
+            else:
+                # Encode video
+                with torch.inference_mode():
+                    video_latent_data = encode_video(vae=vae, video=video, use_tiling=vae_tiling)
+
+                    h_flip_latent_data = None
+                    if with_h_flip:
+                        h_flip_latent_data = encode_video(
+                            vae=vae,
+                            video=video.flip(dims=[-1]),
+                            use_tiling=vae_tiling,
+                        )
 
             # Save latents for each item in batch
             for i in range(len(batch["relative_path"])):
-                output_rel_path = Path(batch["main_media_relative_path"][i]).with_suffix(".pt")
+                output_rel_path = output_rel_paths[i]
                 output_file = output_path / output_rel_path
 
                 # Create output directory maintaining structure
                 output_file.parent.mkdir(parents=True, exist_ok=True)
 
                 # Index into batch to get this item's latents
-                latent_data = {
-                    "latents": video_latent_data["latents"][i].cpu().contiguous(),  # [C, F', H', W']
-                    "num_frames": video_latent_data["num_frames"],
-                    "height": video_latent_data["height"],
-                    "width": video_latent_data["width"],
-                    "fps": batch["video_metadata"]["fps"][i].item(),
-                }
+                if video_latent_data is not None:
+                    latent_data = {
+                        "latents": video_latent_data["latents"][i].cpu().contiguous(),  # [C, F', H', W']
+                        "num_frames": video_latent_data["num_frames"],
+                        "height": video_latent_data["height"],
+                        "width": video_latent_data["width"],
+                        "fps": batch["video_metadata"]["fps"][i].item(),
+                    }
 
-                torch.save(latent_data, output_file)
+                    torch.save(latent_data, output_file)
 
                 # Save h_flip latents
                 if h_flip_latent_data is not None:
@@ -634,6 +654,11 @@ def compute_latents(  # noqa: PLR0913, PLR0915
 
                 # Process audio if enabled (audio is already extracted by the dataset)
                 if with_audio:
+                    audio_output_file = audio_output_path / output_rel_path
+                    if reuse_precomputed_video and audio_output_file.is_file():
+                        reused_audio_count += 1
+                        continue
+
                     audio_batch = batch.get("audio")
                     if audio_batch is not None:
                         # Extract the i-th item from batched audio data
@@ -648,7 +673,6 @@ def compute_latents(  # noqa: PLR0913, PLR0915
                             audio_latents = encode_audio(audio_vae_encoder, audio_processor, audio_data)
 
                         # Save audio latents
-                        audio_output_file = audio_output_path / output_rel_path
                         audio_output_file.parent.mkdir(parents=True, exist_ok=True)
 
                         audio_save_data = {
@@ -668,6 +692,8 @@ def compute_latents(  # noqa: PLR0913, PLR0915
 
     # Log summary
     logger.info(f"Processed {len(dataset)} videos. Latents saved to {output_path}")
+    if reuse_precomputed_video:
+        logger.info(f"Reused {reused_video_count} video latents and {reused_audio_count} audio latents")
     if with_h_flip:
         logger.info(f"H-flip latents saved to {h_flip_output_path}")
     if with_audio:
