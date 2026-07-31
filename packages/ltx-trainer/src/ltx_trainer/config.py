@@ -240,6 +240,25 @@ class DataConfig(ConfigBaseModel):
 class ValidationConfig(ConfigBaseModel):
     """Configuration for validation during training"""
 
+    loss_data_root: str | None = Field(
+        default=None,
+        description="Optional path to a separate preprocessed holdout dataset. "
+        "When set, deterministic validation loss is computed at each validation interval.",
+    )
+
+    loss_num_batches: int | None = Field(
+        default=None,
+        description="Maximum number of holdout batches used for validation loss. "
+        "None evaluates the complete holdout dataset.",
+        gt=0,
+    )
+
+    loss_batch_size: int = Field(
+        default=1,
+        description="Batch size used by the holdout loss dataloader.",
+        gt=0,
+    )
+
     prompts: list[str] = Field(
         default_factory=list,
         description="List of prompts to use for validation",
@@ -354,7 +373,7 @@ class ValidationConfig(ConfigBaseModel):
 
     skip_initial_validation: bool = Field(
         default=False,
-        description="Skip validation video sampling at step 0 (beginning of training)",
+        description="Skip validation loss and video sampling at the beginning of training",
     )
 
     include_reference_in_output: bool = Field(

@@ -94,6 +94,11 @@ def print_config(config: LtxTrainerConfig) -> None:
                 "🎥 Validation",
                 [
                     ("Prompts", f"{len(val.prompts)} prompt(s)" if val.prompts else "[dim]—[/]"),
+                    ("Holdout Data", fmt(val.loss_data_root) if val.loss_data_root else "[dim]—[/]"),
+                    (
+                        "Holdout Batches",
+                        str(val.loss_num_batches) if val.loss_num_batches is not None else "[dim]All[/]",
+                    ),
                     ("Interval", f"Every {val.interval} steps" if val.interval else "[dim]Disabled[/]"),
                     ("Video Dims", f"{val.video_dims[0]}x{val.video_dims[1]}, {val.video_dims[2]} frames"),
                     ("Frame Rate", f"{val.frame_rate} fps"),
@@ -126,7 +131,12 @@ def print_config(config: LtxTrainerConfig) -> None:
                         if cfg.checkpoints.interval
                         else "[dim]Disabled[/]",
                     ),
-                    ("TensorBoard", f"{cfg.tensorboard.log_dir or 'tensorboard/'}" if cfg.tensorboard.enabled else "[dim]Disabled[/]"),
+                    (
+                        "TensorBoard",
+                        f"{cfg.tensorboard.log_dir or 'tensorboard/'}"
+                        if cfg.tensorboard.enabled
+                        else "[dim]Disabled[/]",
+                    ),
                     ("HF Hub", cfg.hub.hub_model_id if cfg.hub.push_to_hub else "[dim]Disabled[/]"),
                 ],
             ),

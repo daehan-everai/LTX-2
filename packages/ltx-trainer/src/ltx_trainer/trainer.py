@@ -47,6 +47,7 @@ from ltx_trainer.training_state import ConfigFingerprint, RngStates, TrainingSta
 from ltx_trainer.training_strategies import get_training_strategy
 from ltx_trainer.utils import open_image_as_srgb, save_image
 from ltx_trainer.validation_sampler import CachedPromptEmbeddings, GenerationConfig, ValidationSampler
+from ltx_trainer.validation_loss import ValidationLossAccumulator
 from ltx_trainer.video_utils import read_video, save_video
 
 # Disable irrelevant warnings from transformers
@@ -94,6 +95,8 @@ class LtxvTrainer:
         self._load_checkpoint()
         self._prepare_models_for_training()
         self._dataset = None
+        self._validation_dataset = None
+        self._validation_dataloader = None
         self._global_step = -1
         self._checkpoint_paths: list[Path] = []
         self._training_state_paths: list[Path] = []
@@ -135,6 +138,7 @@ class LtxvTrainer:
         self._init_tensorboard()
 
         self._init_dataloader()
+        self._init_validation_dataloader()
         data_iter = iter(self._dataloader)
         self._init_timestep_sampler()
 
@@ -179,7 +183,7 @@ class LtxvTrainer:
             if cfg.validation.interval and not cfg.validation.skip_initial_validation:
                 self._transformer.eval()
                 try:
-                    sampled_videos_paths = self._sample_videos(progress)
+                    sampled_videos_paths = self._run_validation(progress)
                 finally:
                     self._transformer.train()
             self._accelerator.wait_for_everyone()
@@ -243,7 +247,7 @@ class LtxvTrainer:
                     ):
                         self._transformer.eval()
                         try:
-                            sampled_videos_paths = self._sample_videos(progress)
+                            sampled_videos_paths = self._run_validation(progress)
                         finally:
                             self._transformer.train()
                     # Save checkpoint if needed
@@ -946,6 +950,38 @@ class LtxvTrainer:
 
         self._dataloader = self._accelerator.prepare(dataloader)
 
+    def _init_validation_dataloader(self) -> None:
+        """Initialize a deterministic dataloader for holdout loss evaluation."""
+        data_root = self._config.validation.loss_data_root
+        if data_root is None:
+            self._validation_dataset = None
+            self._validation_dataloader = None
+            return
+
+        data_sources = self._training_strategy.get_data_sources()
+        optional_sources = self._training_strategy.get_optional_data_sources()
+        self._validation_dataset = PrecomputedDataset(
+            data_root,
+            data_sources=data_sources,
+            h_flip=False,
+            optional_sources=optional_sources,
+        )
+        dataloader = DataLoader(
+            self._validation_dataset,
+            batch_size=self._config.validation.loss_batch_size,
+            shuffle=False,
+            drop_last=False,
+            num_workers=self._config.data.num_dataloader_workers,
+            pin_memory=self._config.data.num_dataloader_workers > 0,
+            persistent_workers=self._config.data.num_dataloader_workers > 0,
+            collate_fn=collate_with_optional_sources if optional_sources else None,
+        )
+        self._validation_dataloader = self._accelerator.prepare(dataloader)
+        logger.info(
+            f"Loaded holdout dataset with {len(self._validation_dataset):,} samples "
+            f"from {Path(data_root).resolve()}"
+        )
+
     def _init_lora_weights(self) -> None:
         """Initialize LoRA weights for the transformer."""
         logger.debug("Initializing LoRA weights...")
@@ -1085,6 +1121,56 @@ class LtxvTrainer:
                 f"FSDP with quantization ({self._config.acceleration.quantization}) may have compatibility issues."
                 "Monitor training stability and consider disabling quantization if issues arise."
             )
+
+    # Note: Use @torch.no_grad() instead of @torch.inference_mode() to avoid
+    # FSDP inplace update errors after validation
+    @torch.no_grad()
+    def _compute_validation_loss(self) -> dict[str, float] | None:
+        """Evaluate deterministic holdout loss and log it to TensorBoard."""
+        if self._validation_dataloader is None:
+            return None
+
+        cpu_rng_state = torch.random.get_rng_state()
+        cuda_rng_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        accumulator = ValidationLossAccumulator()
+        max_batches = self._config.validation.loss_num_batches
+
+        try:
+            torch.manual_seed(self._config.validation.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self._config.validation.seed)
+
+            for batch_index, batch in enumerate(self._validation_dataloader):
+                if max_batches is not None and batch_index >= max_batches:
+                    break
+                losses, sigmas = self._training_step(batch)
+                accumulator.update(losses, sigmas)
+        finally:
+            torch.random.set_rng_state(cpu_rng_state)
+            if cuda_rng_states is not None:
+                torch.cuda.set_rng_state_all(cuda_rng_states)
+
+        reduced = self._accelerator.reduce(
+            accumulator.to_tensor(self._accelerator.device),
+            reduction="sum",
+        )
+        metrics = ValidationLossAccumulator.from_tensor(reduced).metrics()
+        if IS_MAIN_PROCESS:
+            self._log_metrics(metrics)
+            logger.info(
+                f"📉 Holdout validation at step {self._global_step}: "
+                f"loss={metrics['validation/loss']:.6f}, "
+                f"samples={int(metrics['validation/num_samples'])}"
+            )
+        return metrics
+
+    def _run_validation(self, progress: TrainingProgress) -> list[Path] | None:
+        """Run holdout loss evaluation and optional generation sampling."""
+        self._optimizer.zero_grad(set_to_none=True)
+        self._compute_validation_loss()
+        if not self._config.validation.prompts:
+            return None
+        return self._sample_videos(progress)
 
     # Note: Use @torch.no_grad() instead of @torch.inference_mode() to avoid
     # FSDP inplace update errors after validation

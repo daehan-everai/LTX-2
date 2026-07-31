@@ -251,6 +251,9 @@ Validation and inference settings for monitoring training progress.
 
 ```yaml
 validation:
+  loss_data_root: "/path/to/preprocessed/holdout" # Optional holdout data for validation loss
+  loss_num_batches: null             # Maximum holdout batches (null = all)
+  loss_batch_size: 1                 # Holdout dataloader batch size
   prompts: # Validation prompts
     - "A cat playing with a ball"
     - "A dog running in a field"
@@ -276,6 +279,9 @@ validation:
 
 | Parameter                     | Description                                                                                                              |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `loss_data_root`              | Separate preprocessed holdout dataset used for deterministic validation loss                                             |
+| `loss_num_batches`            | Maximum holdout batches evaluated per validation run (`null` evaluates the complete holdout)                             |
+| `loss_batch_size`             | Batch size used for holdout loss evaluation                                                                              |
 | `prompts`                     | List of text prompts for validation video generation                                                                     |
 | `images`                      | List of image paths for image-to-video validation (must match number of prompts)                                         |
 | `reference_videos`            | List of reference video paths for IC-LoRA validation (must match number of prompts)                                      |
@@ -286,7 +292,12 @@ validation:
 | `stg_blocks`                  | Transformer blocks to perturb for STG. Recommended: `[29]` (single block)                                                |
 | `stg_mode`                    | STG mode: `"stg_av"` perturbs both audio and video, `"stg_v"` perturbs video only                                        |
 | `generate_audio`              | Whether to generate audio in validation samples                                                                          |
+| `skip_initial_validation`     | Skip both holdout loss and generation sampling at the beginning of training                                              |
 | `include_reference_in_output` | For IC-LoRA: concatenate reference video side-by-side with output                                                        |
+
+Validation loss uses a fixed RNG seed and disables training-only caption dropout,
+so values are directly comparable across validation intervals. Overall loss and
+sigma-bucketed losses are logged to TensorBoard under `validation/`.
 
 ### CheckpointsConfig
 
