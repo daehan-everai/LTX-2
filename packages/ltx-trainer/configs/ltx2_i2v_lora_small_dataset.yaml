@@ -1,0 +1,95 @@
+# Small-dataset, video-only I2V LoRA profile.
+#
+# This profile follows the official LTX-2.3 I2V starting point while keeping
+# the legacy text_to_video strategy used by this branch. It is intentionally
+# attention-only: add FFN targets only after holdout evidence shows that rank
+# 32 attention adapters lack capacity.
+
+model:
+  model_path: "path/to/ltx-2-dev.safetensors"
+  text_encoder_path: "path/to/gemma-3-12b-it"
+  training_mode: lora
+  load_checkpoint: null
+
+lora:
+  rank: 32
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - attn1.to_k
+    - attn1.to_q
+    - attn1.to_v
+    - attn1.to_out.0
+    - attn2.to_k
+    - attn2.to_q
+    - attn2.to_v
+    - attn2.to_out.0
+
+training_strategy:
+  name: text_to_video
+  # Pure I2V. Use 0.5 if one adapter must retain mixed T2V/I2V behavior.
+  first_frame_conditioning_p: 1.0
+  with_audio: false
+  h_flip: false
+  temporal_boundary_loss_weight: 2.0
+  temporal_boundary_frames: 1
+  caption_dropout_p: 0.0
+
+optimization:
+  learning_rate: 1e-4
+  steps: 2000
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  max_grad_norm: 1.0
+  optimizer_type: adamw
+  scheduler_type: linear
+  scheduler_params:
+    end_factor: 0.1
+  enable_gradient_checkpointing: true
+  gradient_checkpointing_ratio: 0.5
+
+acceleration:
+  mixed_precision_mode: bf16
+  quantization: null
+  load_text_encoder_in_8bit: false
+
+data:
+  preprocessed_data_root: "path/to/preprocessed/train"
+  num_dataloader_workers: 4
+
+validation:
+  loss_data_root: "path/to/preprocessed/holdout"
+  loss_num_batches: null
+  loss_batch_size: 1
+  prompts: []
+  images: null
+  interval: 1000
+  video_dims: [448, 768, 49]
+  frame_rate: 24.0
+  seed: 42
+  inference_steps: 30
+  guidance_scale: 4.0
+  stg_scale: 1.0
+  stg_blocks: [29]
+  stg_mode: stg_v
+  generate_audio: false
+  skip_initial_validation: false
+
+checkpoints:
+  interval: 100
+  keep_last_n: 3
+  precision: bfloat16
+  no_resume: true
+  save_training_state: minimal
+
+flow_matching:
+  timestep_sampling_mode: shifted_logit_normal
+  timestep_sampling_params: {}
+  timestep_loss_weighting: none
+
+hub:
+  push_to_hub: false
+  hub_model_id: null
+
+seed: 42
+output_dir: "outputs/i2v_lora_small_dataset"

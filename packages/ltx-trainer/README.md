@@ -14,6 +14,7 @@ All detailed guides and technical documentation are in the [docs](./docs/) direc
 - [🎬 Dataset Preparation](docs/dataset-preparation.md)
 - [🛠️ Training Modes](docs/training-modes.md)
 - [⚙️ Configuration Reference](docs/configuration-reference.md)
+- [🎯 Small-dataset I2V LoRA Recipe](docs/small-i2v-lora-recipe.md)
 - [🚀 Training Guide](docs/training-guide.md)
 - [🧪 Inference Guide](../ltx-pipelines/README.md)
 - [🔧 Utility Scripts](docs/utility-scripts.md)
