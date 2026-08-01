@@ -1325,6 +1325,14 @@ class LtxvTrainer:
             self._accelerator.wait_for_everyone()
             return None
 
+        # The final training step can already have been saved by the periodic
+        # checkpoint interval. Avoid appending that same path twice: doing so
+        # consumes two retention slots and can delete one unique checkpoint.
+        if saved_weights_path in self._checkpoint_paths and saved_weights_path.exists():
+            logger.info(f"Checkpoint for step {self._global_step} is already saved; skipping duplicate save")
+            self._accelerator.wait_for_everyone()
+            return saved_weights_path
+
         save_dir.mkdir(exist_ok=True, parents=True)
 
         # Determine save precision
