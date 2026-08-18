@@ -63,6 +63,8 @@ def print_config(config: LtxTrainerConfig) -> None:
         strategy_items.append(("First Frame Cond P", str(cfg.training_strategy.first_frame_conditioning_p)))
     if hasattr(cfg.training_strategy, "h_flip"):
         strategy_items.append(("H-Flip", fmt(cfg.training_strategy.h_flip)))
+    if hasattr(cfg.training_strategy, "beta"):
+        strategy_items.append(("Flow-DPO beta", str(cfg.training_strategy.beta)))
     sections.append(("🎯 Strategy", strategy_items))
 
     sections.extend(

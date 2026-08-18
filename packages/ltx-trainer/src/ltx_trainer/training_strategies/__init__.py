@@ -2,6 +2,7 @@
 This package implements the Strategy Pattern to handle different training modes:
 - Text-to-video training (standard generation, optionally with audio)
 - Video-to-video training (IC-LoRA mode with reference videos)
+- Flow-DPO training (Kling pairwise preference on chosen/rejected latents)
 Each strategy encapsulates the specific logic for preparing model inputs and computing loss.
 """
 
@@ -13,15 +14,18 @@ from ltx_trainer.training_strategies.base_strategy import (
     TrainingStrategy,
     TrainingStrategyConfigBase,
 )
+from ltx_trainer.training_strategies.flow_dpo import FlowDPOConfig, FlowDPOStrategy
 from ltx_trainer.training_strategies.text_to_video import TextToVideoConfig, TextToVideoStrategy
 from ltx_trainer.training_strategies.video_to_video import VideoToVideoConfig, VideoToVideoStrategy
 
 # Type alias for all strategy config types
-TrainingStrategyConfig = TextToVideoConfig | VideoToVideoConfig
+TrainingStrategyConfig = TextToVideoConfig | VideoToVideoConfig | FlowDPOConfig
 
 __all__ = [
     "DEFAULT_FPS",
     "VIDEO_SCALE_FACTORS",
+    "FlowDPOConfig",
+    "FlowDPOStrategy",
     "ModelInputs",
     "TextToVideoConfig",
     "TextToVideoStrategy",
@@ -50,6 +54,8 @@ def get_training_strategy(config: TrainingStrategyConfig) -> TrainingStrategy:
             strategy = TextToVideoStrategy(config)
         case VideoToVideoConfig():
             strategy = VideoToVideoStrategy(config)
+        case FlowDPOConfig():
+            strategy = FlowDPOStrategy(config)
         case _:
             raise ValueError(f"Unknown training strategy config type: {type(config).__name__}")
 

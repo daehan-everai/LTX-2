@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, Validatio
 
 from ltx_trainer.quantization import QuantizationOptions
 from ltx_trainer.training_strategies.base_strategy import TrainingStrategyConfigBase
+from ltx_trainer.training_strategies.flow_dpo import FlowDPOConfig
 from ltx_trainer.training_strategies.text_to_video import TextToVideoConfig
 from ltx_trainer.training_strategies.video_to_video import VideoToVideoConfig
 
@@ -98,7 +99,9 @@ def _get_strategy_discriminator(v: dict | TrainingStrategyConfigBase) -> str:
 
 # Union type for all strategy configs with discriminator
 TrainingStrategyConfig = Annotated[
-    Annotated[TextToVideoConfig, Tag("text_to_video")] | Annotated[VideoToVideoConfig, Tag("video_to_video")],
+    Annotated[TextToVideoConfig, Tag("text_to_video")]
+    | Annotated[VideoToVideoConfig, Tag("video_to_video")]
+    | Annotated[FlowDPOConfig, Tag("flow_dpo")],
     Discriminator(_get_strategy_discriminator),
 ]
 
@@ -598,5 +601,16 @@ class LtxTrainerConfig(ConfigBaseModel):
         # Check that LoRA config is provided when using video_to_video strategy
         if self.training_strategy.name == "video_to_video" and self.model.training_mode != "lora":
             raise ValueError("Training mode must be 'lora' when using video_to_video strategy")
+
+        if self.training_strategy.name == "flow_dpo":
+            if self.model.training_mode != "lora":
+                raise ValueError("Training mode must be 'lora' when using flow_dpo")
+            if not self.model.load_checkpoint:
+                raise ValueError(
+                    "flow_dpo requires model.load_checkpoint: the loaded LoRA is the frozen "
+                    "reference and the trainable policy initialization"
+                )
+            if getattr(self.training_strategy, "with_audio", False):
+                raise ValueError("flow_dpo does not support audio training")
 
         return self

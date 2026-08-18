@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import time
@@ -45,6 +46,7 @@ from ltx_trainer.sigma_tracker import SigmaBucketTracker
 from ltx_trainer.timestep_samplers import SAMPLERS
 from ltx_trainer.training_state import ConfigFingerprint, RngStates, TrainingState
 from ltx_trainer.training_strategies import get_training_strategy
+from ltx_trainer.training_strategies.base_strategy import ModelInputs
 from ltx_trainer.utils import open_image_as_srgb, save_image
 from ltx_trainer.validation_sampler import CachedPromptEmbeddings, GenerationConfig, ValidationSampler
 from ltx_trainer.validation_loss import ValidationLossAccumulator
@@ -93,7 +95,9 @@ class LtxvTrainer:
         self._collect_trainable_params()
         self._loaded_checkpoint_path: Path | None = None
         self._load_checkpoint()
+        self._setup_dpo_reference_adapter()
         self._prepare_models_for_training()
+        self._last_dpo_metrics: dict[str, float] = {}
         self._dataset = None
         self._validation_dataset = None
         self._validation_dataloader = None
@@ -295,6 +299,7 @@ class LtxvTrainer:
                         if grad_norm is not None:
                             metrics["train/grad_norm"] = grad_norm.item()
                         metrics.update(self._sigma_tracker.get_metrics())
+                        metrics.update(self._last_dpo_metrics)
                         self._log_metrics(metrics)
 
                     # Fallback logging when progress bars are disabled
@@ -355,6 +360,7 @@ class LtxvTrainer:
                     "stats/peak_gpu_memory_gb": stats.peak_gpu_memory_gb,
                 }
             )
+            self._save_training_plots()
             if self._tb_writer is not None:
                 self._tb_writer.close()
                 self._tb_writer = None
@@ -454,6 +460,9 @@ class LtxvTrainer:
         model_inputs = self._training_strategy.prepare_training_inputs(batch, self._timestep_sampler)
         model_inputs.sigma_loss_weights = self._get_sigma_loss_weights(model_inputs.video.sigma)
 
+        if self._config.training_strategy.name == "flow_dpo":
+            return self._flow_dpo_training_step(model_inputs)
+
         video_pred, audio_pred = self._transformer(
             video=model_inputs.video,
             audio=model_inputs.audio,
@@ -463,6 +472,76 @@ class LtxvTrainer:
         loss = self._training_strategy.compute_loss(video_pred, audio_pred, model_inputs)
 
         return loss, model_inputs.video.sigma.detach()
+
+    def _flow_dpo_training_step(self, model_inputs: ModelInputs) -> tuple[Tensor, Tensor | None]:
+        """Policy + frozen-ref forwards for Kling Flow-DPO. Same noise/t already in inputs."""
+        if model_inputs.rejected_video is None:
+            raise ValueError("flow_dpo requires rejected_video on ModelInputs")
+
+        policy_w, _audio_w = self._transformer(
+            video=model_inputs.video,
+            audio=None,
+            perturbations=None,
+        )
+        policy_l, _audio_l = self._transformer(
+            video=model_inputs.rejected_video,
+            audio=None,
+            perturbations=None,
+        )
+
+        with torch.no_grad():
+            self._set_dpo_adapter("ref")
+            ref_w, _ = self._transformer(
+                video=model_inputs.video,
+                audio=None,
+                perturbations=None,
+            )
+            ref_l, _ = self._transformer(
+                video=model_inputs.rejected_video,
+                audio=None,
+                perturbations=None,
+            )
+            self._set_dpo_adapter("default")
+
+        loss, metrics = self._training_strategy.compute_dpo_loss(
+            policy_w, policy_l, ref_w, ref_l, model_inputs
+        )
+        self._last_dpo_metrics = metrics
+        return loss, model_inputs.video.sigma.detach()
+
+    def _peft_transformer(self):
+        return self._accelerator.unwrap_model(self._transformer, keep_torch_compile=False)
+
+    def _set_dpo_adapter(self, adapter_name: str) -> None:
+        peft_model = self._peft_transformer()
+        if hasattr(peft_model, "set_adapter"):
+            peft_model.set_adapter(adapter_name)
+
+    def _setup_dpo_reference_adapter(self) -> None:
+        """Clone the loaded policy LoRA into a frozen ``ref`` adapter for Flow-DPO."""
+        if self._config.training_strategy.name != "flow_dpo":
+            return
+        if self._config.model.training_mode != "lora":
+            raise ValueError("flow_dpo requires LoRA training_mode")
+
+        peft_model = self._transformer
+        default_state = get_peft_model_state_dict(peft_model, adapter_name="default")
+        if "ref" not in peft_model.peft_config:
+            peft_model.add_adapter("ref", peft_model.peft_config["default"])
+        set_peft_model_state_dict(peft_model, default_state, adapter_name="ref")
+        peft_model.set_adapter("default")
+
+        frozen = 0
+        for name, param in peft_model.named_parameters():
+            if "lora_" in name and ".ref." in name:
+                param.requires_grad_(False)
+                frozen += 1
+        self._trainable_params = [p for p in peft_model.parameters() if p.requires_grad]
+        logger.info(
+            "Frozen Flow-DPO ref adapter (%s tensors). Trainable params: %s",
+            frozen,
+            f"{sum(p.numel() for p in self._trainable_params):,}",
+        )
 
     @free_gpu_memory_context(after=True)
     def _load_text_encoder_and_cache_embeddings(self) -> list[CachedPromptEmbeddings] | None:
@@ -1341,8 +1420,14 @@ class LtxvTrainer:
         # For LoRA: extract only adapter weights; for full: use as-is
         if is_lora:
             unwrapped = self._accelerator.unwrap_model(self._transformer, keep_torch_compile=False)
+            if hasattr(unwrapped, "set_adapter"):
+                unwrapped.set_adapter("default")
             # For FSDP, pass full_state_dict since model params aren't directly accessible
-            state_dict = get_peft_model_state_dict(unwrapped, state_dict=full_state_dict if is_fsdp else None)
+            state_dict = get_peft_model_state_dict(
+                unwrapped,
+                state_dict=full_state_dict if is_fsdp else None,
+                adapter_name="default",
+            )
 
             # Remove "base_model.model." prefix added by PEFT
             state_dict = {k.replace("base_model.model.", "", 1): v for k, v in state_dict.items()}
@@ -1505,11 +1590,82 @@ class LtxvTrainer:
         logger.info(f"TensorBoard logging to: {log_dir}")
 
     def _log_metrics(self, metrics: dict[str, float]) -> None:
-        """Log metrics to TensorBoard."""
+        """Log metrics to TensorBoard and an append-only JSONL file."""
         if self._tb_writer is not None:
             for key, value in metrics.items():
                 self._tb_writer.add_scalar(key, value, global_step=self._global_step)
             self._tb_writer.flush()
+        if IS_MAIN_PROCESS:
+            record = {"step": self._global_step}
+            for key, value in metrics.items():
+                if isinstance(value, (int, float)):
+                    record[key] = float(value)
+            metrics_path = Path(self._config.output_dir) / "metrics.jsonl"
+            metrics_path.parent.mkdir(parents=True, exist_ok=True)
+            with metrics_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+
+    def _save_training_plots(self) -> None:
+        """Render PNG plots from metrics.jsonl so a run can be inspected without TensorBoard."""
+        metrics_path = Path(self._config.output_dir) / "metrics.jsonl"
+        if not metrics_path.is_file():
+            return
+        rows: list[dict[str, float]] = []
+        for line in metrics_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+        train_rows = [row for row in rows if "train/loss" in row]
+        if not train_rows:
+            logger.warning("No train/loss rows in %s; skipping plots", metrics_path)
+            return
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError:
+            logger.warning("matplotlib is not available; metrics.jsonl was saved without PNG plots")
+            return
+
+        plots_dir = Path(self._config.output_dir) / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        steps = [row["step"] for row in train_rows]
+        series = {
+            "loss": [row["train/loss"] for row in train_rows],
+            "dpo_accuracy": [row.get("train/dpo_accuracy") for row in train_rows],
+            "dpo_margin": [row.get("train/dpo_margin") for row in train_rows],
+            "chosen_err": [row.get("train/chosen_err") for row in train_rows],
+            "rejected_err": [row.get("train/rejected_err") for row in train_rows],
+            "learning_rate": [row.get("train/learning_rate") for row in train_rows],
+        }
+
+        def _plot(filename: str, title: str, keys: list[str]) -> None:
+            fig, ax = plt.subplots(figsize=(10, 4))
+            plotted = False
+            for key in keys:
+                values = series[key]
+                if all(value is None for value in values):
+                    continue
+                ax.plot(steps, values, label=key.replace("_", " "))
+                plotted = True
+            if not plotted:
+                plt.close(fig)
+                return
+            ax.set_title(title)
+            ax.set_xlabel("step")
+            ax.grid(True, alpha=0.3)
+            if len(keys) > 1:
+                ax.legend()
+            fig.tight_layout()
+            fig.savefig(plots_dir / filename, dpi=120)
+            plt.close(fig)
+
+        _plot("loss.png", "Train loss", ["loss"])
+        _plot("dpo_accuracy.png", "Flow-DPO pairwise accuracy", ["dpo_accuracy"])
+        _plot("dpo_margin.png", "Flow-DPO margin (l_diff - w_diff)", ["dpo_margin"])
+        _plot("velocity_errors.png", "Policy velocity MSE", ["chosen_err", "rejected_err"])
+        _plot("learning_rate.png", "Learning rate", ["learning_rate"])
+        logger.info("Saved training plots to %s", plots_dir.relative_to(self._config.output_dir))
 
     @torch.no_grad()
     def _apply_weight_noise(self) -> None:

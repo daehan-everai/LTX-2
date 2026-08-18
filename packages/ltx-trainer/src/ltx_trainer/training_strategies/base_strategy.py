@@ -34,7 +34,7 @@ class TrainingStrategyConfigBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Literal["text_to_video", "video_to_video"] = Field(
+    name: Literal["text_to_video", "video_to_video", "flow_dpo"] = Field(
         description="Unique name identifying the training strategy type"
     )
 
@@ -60,6 +60,10 @@ class ModelInputs:
 
     # Metadata needed for loss computation in some strategies
     ref_seq_len: int | None = None  # For IC-LoRA: length of reference sequence
+
+    # Flow-DPO: rejected (non-preferred) side. Unused by SFT strategies.
+    rejected_video: Modality | None = None
+    rejected_video_targets: Tensor | None = None
 
 
 class TrainingStrategy(ABC):
