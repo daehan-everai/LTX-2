@@ -36,7 +36,13 @@ from rich.console import Console
 console = Console()
 
 ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_PROMPT = Path(__file__).resolve().parent.parent / "docs" / "prompts" / "contact_sheet_caption.md"
+DEFAULT_PROMPT = (
+    Path(__file__).resolve().parent.parent
+    / "docs"
+    / "contact-sheet-captioning"
+    / "prompts"
+    / "contact_sheet_caption.md"
+)
 CERT_CANDIDATES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt")
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
 

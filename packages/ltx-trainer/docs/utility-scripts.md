@@ -80,33 +80,9 @@ Set one of these to use Gemini Flash without passing `--api-key`:
 - `GOOGLE_API_KEY`
 - `GEMINI_API_KEY`
 
-### OpenRouter contact-sheet captioning
-
-Use this path when you want a hosted vision model (Grok / Gemini via OpenRouter) and dense stills
-instead of Qwen Omni or a raw MP4 upload. This is the captioning pipeline used for the doggy LoRA
-SFT/DPO recaptions.
-
-```bash
-uv run python scripts/build_contact_sheets.py videos_dir/ \
-    --output-dir sheets/ --manifest sheets/manifest.jsonl \
-    --frames-per-page 12 --pages 4 --columns 4 --cell 400
-
-export OPENROUTER_API_KEY=...
-uv run python scripts/caption_from_contact_sheets.py \
-    --video-dir videos_dir/ --board-dir sheets/ \
-    --prompt docs/prompts/doggy_contact_sheet_caption.md \
-    --output captions.jsonl --dataset-json dataset.json
-```
-
-`build_contact_sheets.py` writes `{stem}-p1.jpg` … `{stem}-pN.jpg` with numbered timestamps.
-`caption_from_contact_sheets.py` sends those pages to OpenRouter and writes:
-
-- `captions.jsonl` — per-clip records (`id`, `caption`, model/cost metadata)
-- `dataset.json` — `{caption, media_path}` list for `process_dataset.py`
-
-Generic (non-doggy) captions use the default prompt `docs/prompts/contact_sheet_caption.md`.
-Override `--model` / `--fallback-model` as needed. Already-captioned ids in `--output` are skipped
-unless `--override` is set.
+Contact-sheet + OpenRouter captioning (doggy SFT/DPO recaptions) is documented separately:
+[OpenRouter contact-sheet captioning](contact-sheet-captioning/README.md)
+(https://github.com/daehan-everai/LTX-2/blob/daehan/train/packages/ltx-trainer/docs/contact-sheet-captioning/README.md).
 
 ### Dataset Preprocessing
 

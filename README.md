@@ -117,3 +117,10 @@ Each package includes comprehensive documentation:
 * **[LTX-Core README](packages/ltx-core/README.md)** - Core model implementation, inference stack, and utilities
 * **[LTX-Pipelines README](packages/ltx-pipelines/README.md)** - High-level pipeline implementations and usage guides
 * **[LTX-Trainer README](packages/ltx-trainer/README.md)** - Training and fine-tuning documentation with detailed guides
+* **[OpenRouter contact-sheet captioning](packages/ltx-trainer/docs/contact-sheet-captioning/README.md)** - Contact-sheet + OpenRouter recaption path (doggy SFT/DPO)
+
+## OpenRouter contact-sheet captioning
+
+Dedicated guide for the doggy SFT/DPO recaption path (chronological stills → OpenRouter vision model, not `caption_videos.py`):
+
+https://github.com/daehan-everai/LTX-2/blob/daehan/train/packages/ltx-trainer/docs/contact-sheet-captioning/README.md
