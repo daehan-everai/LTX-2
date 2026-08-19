@@ -48,6 +48,29 @@ uv run python scripts/caption_videos.py scenes_output_dir/ \
 
 This will create a `dataset.json` file containing video paths and their captions.
 
+### OpenRouter contact-sheet captioning
+
+`caption_videos.py` sends the video (or sampled frames) to Qwen2.5-Omni or Gemini Flash.
+When that path is a poor fit — NSFW clips, no local VRAM, or a model that will not ingest MP4s —
+build dense chronological contact sheets and caption those with a hosted vision model:
+
+```bash
+# 1. 4 pages × 12 timestamped frames (the layout used for doggy SFT/DPO recaptions)
+uv run python scripts/build_contact_sheets.py videos_dir/ \
+    --output-dir sheets/ --manifest sheets/manifest.jsonl \
+    --frames-per-page 12 --pages 4 --columns 4 --cell 400
+
+# 2. Caption via OpenRouter (needs OPENROUTER_API_KEY)
+uv run python scripts/caption_from_contact_sheets.py \
+    --video-dir videos_dir/ --board-dir sheets/ \
+    --output captions.jsonl --dataset-json dataset.json
+```
+
+The default prompt is `docs/prompts/contact_sheet_caption.md`. For the doggy LoRA recaptions, pass
+`--prompt docs/prompts/doggy_contact_sheet_caption.md` and keep the default model `x-ai/grok-4.6`
+(Gemini Flash is used as a fallback). `dataset.json` is the same `{caption, media_path}` format
+`process_dataset.py` already expects.
+
 **Captioning options:**
 
 | Option | Description |

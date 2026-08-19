@@ -11,7 +11,7 @@ fine-tuning, and training of video-to-video transformations (IC-LoRA) on custom 
 All detailed guides and technical documentation are in the [docs](./docs/) directory:
 
 - [⚡ Quick Start Guide](docs/quick-start.md)
-- [🎬 Dataset Preparation](docs/dataset-preparation.md)
+- [🎬 Dataset Preparation](docs/dataset-preparation.md) (includes OpenRouter contact-sheet captioning)
 - [🛠️ Training Modes](docs/training-modes.md)
 - [⚙️ Configuration Reference](docs/configuration-reference.md)
 - [🎯 Small-dataset I2V LoRA Recipe](docs/small-i2v-lora-recipe.md)
@@ -20,6 +20,11 @@ All detailed guides and technical documentation are in the [docs](./docs/) direc
 - [🔧 Utility Scripts](docs/utility-scripts.md)
 - [📚 LTX-Core Documentation](../ltx-core/README.md)
 - [🛡️ Troubleshooting Guide](docs/troubleshooting.md)
+
+### Video captioning
+
+- Local Qwen2.5-Omni or Gemini Flash: [`scripts/caption_videos.py`](scripts/caption_videos.py)
+- OpenRouter contact sheets (the doggy SFT/DPO recaption path): [`scripts/build_contact_sheets.py`](scripts/build_contact_sheets.py) + [`scripts/caption_from_contact_sheets.py`](scripts/caption_from_contact_sheets.py). See [Dataset Preparation](docs/dataset-preparation.md#openrouter-contact-sheet-captioning) and [Utility Scripts](docs/utility-scripts.md#openrouter-contact-sheet-captioning).
 
 ---
 
