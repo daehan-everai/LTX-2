@@ -147,10 +147,33 @@ Already-ok rows in `--output` are skipped. Pass `--override` to recaption everyt
 
 | File | When to use |
 |------|-------------|
+| [`prompts/of_selfplay_v4_audio_v1.md`](prompts/of_selfplay_v4_audio_v1.md) | OF-vault / AIL-2703 SFT. AIVI-1358 rewrite-v4 paragraph (`home-made video with phone camera…`), plus `sfw_ok` / `sex_act` labels. This is the prompt used for `gs://…/ail-2703-of-vault-captioned/2026-08-25/`. |
 | [`prompts/doggy_contact_sheet_caption.md`](prompts/doggy_contact_sheet_caption.md) | Doggy SFT/DPO recaptions. Caption must start with `Doggystyle.`, include pace/roughness/hands/spanking from the sheets, 75–125 words, JSON schema with `caption`, `pose`, `pace`, `roughness`, `spanking_present`, `spank_count`. |
 | [`prompts/contact_sheet_caption.md`](prompts/contact_sheet_caption.md) | Generic LTX-style paragraph. JSON `{"caption":"..."}` only. |
 
-Both prompts tell the model **not** to invent audio, mention the contact sheet, or copy a prior caption. The script only requires a non-empty `caption` field; extra schema keys are stored under `fields` in `captions.jsonl`.
+Both the generic and doggy prompts tell the model **not** to invent audio, mention the contact sheet, or copy a prior caption. The script only requires a non-empty `caption` field; extra schema keys are stored under `fields` in `captions.jsonl`.
+
+## OF-vault packer (AIL-2703)
+
+The 2026-08-25 OF-vault SFT pack was **not** built with `caption_from_contact_sheets.py` alone. It used the inventory → 10s crop → sheets → Grok pipeline in [`of-vault-ail2703/`](of-vault-ail2703/README.md) (`scripts/run_full.py` + `of_selfplay_v4_audio_v1.md`).
+
+To recaption already-cropped local clips in the same style:
+
+```bash
+cd packages/ltx-trainer
+
+uv run python scripts/build_contact_sheets.py /path/to/videos_dir \
+  --output-dir /path/to/sheets \
+  --manifest /path/to/sheets/manifest.jsonl \
+  --frames-per-page 12 --pages 4 --columns 4 --cell 360
+
+uv run python scripts/caption_from_contact_sheets.py \
+  --video-dir /path/to/videos_dir \
+  --board-dir /path/to/sheets \
+  --prompt docs/contact-sheet-captioning/prompts/of_selfplay_v4_audio_v1.md \
+  --output /path/to/captions.jsonl \
+  --dataset-json /path/to/dataset.json
+```
 
 ## Outputs
 
