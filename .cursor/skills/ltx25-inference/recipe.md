@@ -1,6 +1,7 @@
 # LTX-2.5 official HQ recipe
 
-Copy `assets/run_official.py` from a canonical tree. Do not re-derive SGLang.
+Use `eval/ltx25-hq-natten/run_official.py` in this repo. Do not re-derive SGLang.
+Do not copy HQ from repo-root `packages/ltx-pipelines` (LTX-2.3).
 
 ## Weights (`--model-root`)
 
@@ -21,7 +22,7 @@ Prefer rsync from a live official-natten `/workspace/ltx-official/models` with `
 
 | Knob | Value |
 | --- | --- |
-| Pipeline | `TI2VidTwoStagesHQPipeline` |
+| Pipeline | `TI2VidTwoStagesHQPipeline` from `eval/ltx25-hq-natten/overlay` |
 | Size | 832×1216, 241 frames, 24 fps, ~10s |
 | Seed | 42 |
 | Image cond | first frame, strength 1.0 |
@@ -56,4 +57,4 @@ LTX-2.5 uses DiffVAE (`CausalDiffusionVAE`), not the 2.3 conv VAE. Without natte
 
 ## Reference bootstrap
 
-Pin torch 2.9.1+cu130, `transformers==5.10.1`, editable overlay, `natten==0.21.5+torch290cu130`.
+`eval/ltx25-hq-natten/bootstrap.sh`: pin torch 2.9.1+cu128, `transformers==5.10.1`, editable overlay, `natten==0.21.5+torch290cu128` (fallback `+torch290cu130`).

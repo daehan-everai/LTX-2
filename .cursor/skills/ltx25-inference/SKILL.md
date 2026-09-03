@@ -14,10 +14,17 @@ Do **not** use SGLang, ComfyParity, Triton NA, or eager SDPA for LTX-2.5.
 
 Weights, knobs, probe, banding: [recipe.md](recipe.md).
 
-Canonical EverAI trees (clone; do not invent a new stack):
+Canonical code in this repo (use this; do not clone Lightricks `main` for eval):
+
+- [`eval/ltx25-hq-natten/`](../../../eval/ltx25-hq-natten/README.md) — overlay + `run_official.py` + bootstrap
+- Pin: [`eval/ltx25-hq-natten/SOURCE.md`](../../../eval/ltx25-hq-natten/SOURCE.md)
+
+Do **not** import HQ from repo-root `packages/ltx-pipelines` (that is LTX-2.3).
+
+Example EverAI job trees that consume this stack:
 
 - `training/ltx-official-aivi1358-of-sft-ltx25-natten30-20260827`
-- `training/ltx-comfy-aivi1358-of-sft-ltx25-v10-20260827` (same runner; multi-column)
+- `training/ltx-official-ail2725-synth-bpp-ail2738-20260903`
 
 ## Hard rules
 
@@ -36,9 +43,9 @@ Canonical EverAI trees (clone; do not invent a new stack):
 | --- | --- |
 | Image | `runpod/pytorch:1.0.6-cu1300-torch291-ubuntu2404` |
 | Torch | image `2.9.1+cu130` (do not let pip pull 2.13) |
-| natten | `natten==0.21.5+torch290cu130` from `https://whl.natten.org` |
+| natten | `natten==0.21.5+torch290cu128` then `+torch290cu130` from `https://whl.natten.org` |
 | transformers | `5.10.1` (need `gemma4_unified`) |
-| Overlay | LTX-2.5 `packages/{ltx-core,ltx-pipelines}` |
+| Overlay | `eval/ltx25-hq-natten/overlay/{ltx-core,ltx-pipelines}` in this repo |
 | GPU | H200, else H100 80GB HBM3 / H100 SXM. Volume 360GB, disk 80GB, port `22/tcp` |
 | Driver | Need CUDA 13. Working: H100 **580.126.09**, H200 **570.195.03**. **570.124.06** (CUDA 12.8) cannot load this torch |
 
@@ -50,7 +57,7 @@ After bootstrap, require log lines `NATTEN_OK` and `TRANSFORMERS_GEMMA4_OK`.
 
 ```
 - [ ] Confirm eval manifest, columns (baseline / LoRA steps), review split, row count
-- [ ] Clone official-natten tree; do not copy SGLang bootstrap
+- [ ] Rsync eval/ltx25-hq-natten/{overlay,run_official.py,run_common.py,bootstrap.sh,run_step.sh}; do not copy SGLang bootstrap
 - [ ] Create GPU only if spend cap allows; distinct pod name
 - [ ] Rsync LTX-2.5 weights from an existing official-natten volume (bwlimit). Do not re-download if a live pod already has them
 - [ ] Bootstrap; assert natten_available(); never export LTX_FORCE_EAGER_NA

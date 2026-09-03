@@ -1,0 +1,52 @@
+[project]
+name = "ltx-core"
+version = "1.2.0"
+description = "Core implementation of Lightricks' LTX-2 model"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # RunPod H100/H200 hosts currently expose a CUDA 12.8-capable 570/580
+    # driver. Keep training on the last validated cu128 PyTorch family rather
+    # than resolving the upstream cu132/nightly stack, which requires a newer
+    # host driver.
+    "torch==2.9.1",
+    "torchaudio==2.9.1",
+    "einops",
+    "numpy",
+    "av",
+    # Upper bound: transformers 5.15.0 routes config attribute access through the
+    # heterogeneity layer, which raises AmbiguousGlobalPerLayerAttributeError on global
+    # `config.head_dim` -- but its own gemma4_unified model code still reads it that way
+    # (modeling_gemma4_unified.py, compute_default_rope_parameters), so the Gemma 4 text
+    # encoder cannot be built at all. 5.14.1 is the newest release verified working.
+    "transformers>=5.8.0,<5.15",
+    "safetensors",
+    "accelerate",
+    "scipy>=1.14",
+]
+
+[project.optional-dependencies]
+natten = []
+
+[tool.uv.sources]
+torch = { index = "torch" }
+torchaudio = { index = "torch-test" }
+
+[[tool.uv.index]]
+name = "torch"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-test"
+url = "https://download.pytorch.org/whl/cu128/"
+explicit = true
+
+[build-system]
+requires = ["uv_build>=0.9.8,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "scikit-image>=0.25.2",
+]
